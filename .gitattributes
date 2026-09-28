@@ -1,0 +1,9 @@
+# Store and check out text files with LF endings, even on Windows.
+# The Pi runs deploy.sh and the systemd unit straight from the checkout;
+# CRLF line endings would break them.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ttf binary
+*.zip binary

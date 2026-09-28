@@ -1,0 +1,31 @@
+# --- Private: never commit ------------------------------------------------
+# Real config holds your printers' Bluetooth MAC addresses.
+config/printers.toml
+# Machine-written settings (planned for Milestone 7: addresses, calibration).
+config/state.json
+.env
+*.local.*
+
+# --- Python ----------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- Output ------------------------------------------------------------------
+# Mock backend and spike scripts write PNGs here.
+out/
+spike/libs/
+
+# --- Editors / tools ---------------------------------------------------------
+.vscode/
+.idea/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+
+# Old copy of the original docs, superseded by the files in the repo.
+labelpi-docs.zip

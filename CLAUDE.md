@@ -1,0 +1,163 @@
+# CLAUDE.md — labelpi
+
+Guidance for Claude Code when working in this repository. Read this first, then
+`docs/SPEC.md` for the full behaviour and API contract.
+
+## What this is
+
+A small, self-hosted label printing service that runs on a dedicated
+**Raspberry Pi Zero W** (original, ARMv6, 512 MB RAM) and prints over Bluetooth to
+two label printers:
+
+| Printer | Protocol / library | Transport |
+|---|---|---|
+| Brother P-touch Cube **PT-P300BT** | Ircama/PT-P300BT protocol — **unlicensed, see below** | Bluetooth Classic, stdlib RFCOMM socket, channel 1 |
+| **Phomemo** D30 (not Niimbot!) | in-house ESC/POS raster encoder (~50 lines) | BLE GATT via `bleak` (service FF00, write FF02) |
+
+It exposes a REST API (for automation) and a single responsive web page that uses
+that same API. The owner is a C#/JavaScript developer, not a Python regular —
+keep the Python plain, explicit and well-commented.
+
+## Hard constraints
+
+- **Must run on an original Pi Zero W (ARMv6).** No dependencies that need a
+  compiler on the Pi or that lack ARMv6 wheels (piwheels) or Debian packages.
+  No Node, no .NET, no Docker on the Pi.
+- **Pure Python where possible.** Allowed runtime deps: `flask`, `waitress`,
+  `pillow`, `bleak` (the D30 only printed over BLE in Milestone 0), plus
+  `packbits` if we keep Ircama's Brother encoder. `pyserial` is not needed —
+  both printers use sockets/BLE directly. Justify any addition.
+- **No build step.** Front end is one `index.html`, one `app.js`, one `style.css`.
+  Vanilla JS, no frameworks, no bundler, no CDN dependencies (the Pi may be
+  offline-ish; serve everything locally).
+- **No queue, no database, no background workers.** Each printer has its own
+  in-memory lock. If a printer is busy, the API returns `409 Busy` immediately.
+  The two printers are independent — one can print while the other is busy.
+- **Config is TOML, read with the stdlib `tomllib`** (Python ≥ 3.11). No YAML.
+- **No auth.** LAN-only service. Don't add login or API keys unless asked.
+- Keep memory use low: don't hold uploaded images longer than the request,
+  cap upload size (see SPEC).
+
+## Project layout (target)
+
+```
+labelpi/
+  __init__.py
+  app.py            # Flask app factory: create_app(config_path)
+  api.py            # /api blueprint — all endpoints
+  config.py         # load + validate config/printers.toml
+  render.py         # text -> image, fit image to label, shortcut expansion
+  printers/
+    __init__.py     # registry: build printers from config, per-printer locks
+    base.py         # Printer interface (abstract base class)
+    brother.py      # PT-P300BT backend (wraps vendored Ircama code)
+    phomemo.py      # Phomemo D30 backend (ESC/POS raster over BLE)
+    mock.py         # writes PNGs to ./out/ instead of printing
+  vendor/           # vendored third-party printer code, with LICENSE files
+  fonts/            # bundled DejaVuSans-Bold.ttf (deterministic rendering)
+  static/
+    index.html
+    app.js
+    style.css
+config/
+  printers.toml     # real config (MACs etc.) — gitignored
+  printers.example.toml
+deploy/
+  deploy.sh         # cron-driven pull-and-restart script
+  labelpi.service   # systemd unit
+  labelpi.sudoers   # allows the deploy user to restart the service only
+tests/
+docs/
+  SPEC.md
+  PI_SETUP.md
+run.py              # entry point: waitress in prod, flask dev server with --dev
+requirements.txt
+requirements-dev.txt
+```
+
+## Architecture rules
+
+- **Everything becomes an image.** Text and shortcuts are rendered to a 1-bit
+  Pillow image by `render.py`; backends only ever receive a ready-to-print image.
+  Backends do not know about text.
+- **Backends implement `base.Printer`:**
+  - `id`, `display_name`, `labels` (from config)
+  - `prepare(image, label) -> Image` — fit/rotate/convert for this printer
+  - `print(image, label) -> None` — connect, send, disconnect; raise
+    `PrinterUnavailable` / `PrinterError` on failure
+  - `status() -> dict` (optional, best-effort)
+- **Connect per job, disconnect after.** Don't hold Bluetooth connections open
+  between jobs; the printers auto-sleep and stale connections are the #1 source
+  of flakiness.
+- **Locking lives in the registry, not in backends.** Use
+  `threading.Lock.acquire(blocking=False)`; always release in `finally`.
+- The web UI must go through the public API — no private endpoints for the UI.
+- Preview uses the exact same rendering path as print (`?preview=1` returns the
+  PNG instead of printing), so what you see is what prints.
+
+## Commands
+
+Dev (on the Manjaro laptop, no printers needed):
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+cp config/printers.example.toml config/printers.toml   # set backend = "mock"
+python run.py --dev            # Flask dev server with reload on :8080
+pytest                         # run tests
+```
+
+Prod (on the Pi — normally you never run this by hand, systemd does):
+
+```bash
+.venv/bin/python run.py        # waitress on 0.0.0.0:8080
+```
+
+Setting `LABELPI_MOCK=1` forces every printer to the mock backend regardless of
+config — use this for local dev and in tests.
+
+## Testing
+
+- `pytest`, no hardware. Tests always run with the mock backend.
+- Cover: text rendering sizes/fitting, image fitting per label type, shortcut
+  expansion (dates with a frozen clock), config loading/validation errors, and
+  API behaviour via Flask's test client (happy path, 400/404/409, preview).
+- Test the busy path by holding a printer's lock in the test and asserting 409.
+- No integration tests against real printers. Hardware checks are manual — see
+  `docs/PI_SETUP.md`.
+
+## Style
+
+- Python 3.11+, type hints on public functions, `dataclasses` for config objects.
+- Standard library first. `logging` (not print) — systemd captures stdout to the
+  journal.
+- Small functions, docstrings that explain *why*. Assume the reader knows C#
+  and JS but not Python idioms — avoid clever one-liners.
+- Format with `ruff format`, lint with `ruff check` (dev dependency only).
+
+## Hardware facts and open risks (Milestone 0 done — details in `docs/SPEC.md` §10)
+
+1. **The D30 is a Phomemo, not a Niimbot.** niimprint / niimbluelib don't
+   apply. Protocol refs: polskafan/phomemo_d30 (MIT),
+   odensc/phomemo-d30-web-bluetooth (Apache-2.0). daehyeok/d30-printer is
+   AGPL — read it, never copy from it.
+2. **Ircama/PT-P300BT has no licence** — do not vendor or copy it. Blocks
+   Milestone 4 until resolved: licence from Ircama, piksel/pytouch-cube (MIT),
+   or our own encoder.
+3. **A sent job is not a printed label.** The D30 sends no completion message
+   over BLE and swallowed jobs silently when a label was jammed. The Brother
+   does confirm completion — wait for it before disconnecting.
+4. **D30 label position is uncalibrated** (printing started ~12 mm into the
+   label); label size may be 12 × 50, not 12 × 40. Calibration comes with the
+   setup UI (Milestone 7).
+5. **Licences.** Check the licence of each piece of code before vendoring it and
+   keep its LICENSE file alongside it in `vendor/`.
+6. The `spike/` scripts are the working reference for both printers until
+   Milestones 4–5 replace them; delete the folder after that.
+
+## Out of scope — don't build these
+
+Label designer / WYSIWYG layout, saved templates, job queue or history,
+user accounts, barcode/QR generation (maybe later), USB printing, multiple
+copies in one request (callers can loop).
