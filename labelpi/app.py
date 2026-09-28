@@ -49,6 +49,12 @@ def create_app(config_path: str | Path | None = None, out_dir: Path | None = Non
 
     app.register_blueprint(api)
     _json_errors_for_api(app)
+
+    # The web UI: one static page (labelpi/static/) that only talks to /api.
+    @app.get("/")
+    def index():
+        return app.send_static_file("index.html")
+
     return app
 
 

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>labelpi</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>labelpi</h1>
+    </header>
+
+    <!-- Printer + label -->
+    <section class="card" aria-label="Printer">
+      <div class="row">
+        <label class="field">
+          <span>Printer</span>
+          <select id="printer"></select>
+        </label>
+        <label class="field">
+          <span>Label</span>
+          <select id="label"></select>
+        </label>
+      </div>
+    </section>
+
+    <!-- What to print -->
+    <section class="card" aria-label="Content">
+      <div class="segmented" role="tablist" aria-label="What to print">
+        <button type="button" role="tab" data-mode="text" aria-selected="true">Text</button>
+        <button type="button" role="tab" data-mode="image" aria-selected="false">Image</button>
+        <button type="button" role="tab" data-mode="shortcut" aria-selected="false">Shortcuts</button>
+      </div>
+
+      <div class="panel" data-panel="text">
+        <label class="field">
+          <span>Text</span>
+          <textarea id="text" rows="3" placeholder="Type your label. Enter makes a new line."></textarea>
+        </label>
+        <div class="segmented small" role="radiogroup" aria-label="Alignment">
+          <button type="button" role="radio" data-align="left" aria-checked="false">Left</button>
+          <button type="button" role="radio" data-align="center" aria-checked="true">Centre</button>
+          <button type="button" role="radio" data-align="right" aria-checked="false">Right</button>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="image" hidden>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="file" accept="image/png,image/jpeg,image/gif,image/bmp">
+          <span id="file-name">Choose an image, or drop one here</span>
+        </label>
+        <div class="toggles">
+          <label><input type="checkbox" id="dither"> Dither (photos)</label>
+          <label><input type="checkbox" id="invert"> Invert</label>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="shortcut" hidden>
+        <div class="shortcuts" id="shortcuts"></div>
+        <p class="hint" id="no-shortcuts" hidden>No shortcuts configured.</p>
+      </div>
+    </section>
+
+    <!-- Preview + print -->
+    <section class="card preview-card" aria-label="Preview">
+      <div class="preview" id="preview-box">
+        <img id="preview" alt="Label preview" hidden>
+        <p class="hint" id="preview-hint">The preview appears here.</p>
+      </div>
+      <button type="button" class="print" id="print" disabled>Print</button>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+</body>
+</html>

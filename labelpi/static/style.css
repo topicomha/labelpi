@@ -1,0 +1,200 @@
+/* labelpi - one page, phone to desktop, follows the system light/dark theme.
+   No external fonts: the system font stack is used. */
+
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --text: #1c1f24;
+  --muted: #5f6672;
+  --border: #d8dce2;
+  --accent: #1f6feb;
+  --accent-text: #ffffff;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --error: #cf222e;
+  --preview-bg: #e9ebef;
+  --radius: 10px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418;
+    --card: #1b1f25;
+    --text: #e6e8eb;
+    --muted: #9aa3ae;
+    --border: #2f353d;
+    --accent: #4c8dff;
+    --accent-text: #0b0d10;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --error: #f85149;
+    --preview-bg: #0c0e11;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.app-header h1 {
+  margin: 4px 0 0;
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .row { grid-template-columns: 1fr; }
+}
+
+.field { display: grid; gap: 4px; }
+.field > span { font-size: 0.85rem; color: var(--muted); }
+
+select, textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+textarea { resize: vertical; min-height: 4.5em; }
+select:focus, textarea:focus, button:focus-visible, .dropzone:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Segmented control (Text | Image | Shortcuts, and alignment) */
+.segmented {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+.segmented button {
+  flex: 1;
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 6px;
+  cursor: pointer;
+}
+.segmented button[aria-selected="true"],
+.segmented button[aria-checked="true"] {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.segmented.small button { padding: 6px; font-size: 0.9rem; }
+
+.panel { display: grid; gap: 12px; }
+.panel[hidden] { display: none; }
+
+/* Image picker */
+.dropzone {
+  display: grid;
+  place-items: center;
+  min-height: 90px;
+  padding: 12px;
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+.dropzone.dragging { border-color: var(--accent); color: var(--text); }
+.dropzone input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+
+.toggles { display: flex; flex-wrap: wrap; gap: 16px; }
+.toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+/* Shortcut buttons */
+.shortcuts { display: flex; flex-wrap: wrap; gap: 8px; }
+.shortcuts button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.shortcuts button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Preview */
+.preview {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  padding: 16px;
+  background: var(--preview-bg);
+  border-radius: 8px;
+  overflow: auto;
+}
+.preview img {
+  /* The PNG is 1 pixel per printer dot: scale up without blurring. */
+  image-rendering: pixelated;
+  max-width: 100%;
+  height: auto;
+  background: #fff;                  /* labels are white even in dark mode */
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+  border-radius: 3px;
+}
+.preview.loading img { opacity: 0.5; }
+.hint { margin: 0; color: var(--muted); font-size: 0.9rem; text-align: center; }
+.hint.error { color: var(--error); }
+
+.print {
+  font: inherit;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 0;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+}
+.print:disabled { opacity: 0.5; cursor: default; }
+
+.status { margin: 0; min-height: 1.4em; text-align: center; }
+.status.ok { color: var(--ok); }
+.status.warn { color: var(--warn); }
+.status.error { color: var(--error); }
