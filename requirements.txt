@@ -1,0 +1,3 @@
+# Runtime dependencies. Must have ARMv6 wheels on piwheels (Pi Zero W).
+# More arrive with later milestones: flask + waitress (2), bleak (5).
+pillow>=10.1

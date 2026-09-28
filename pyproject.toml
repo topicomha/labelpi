@@ -1,0 +1,13 @@
+# Tool settings only. labelpi is not packaged or installed; there is no build step.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["spike"]  # throwaway Milestone 0 scripts
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
