@@ -188,7 +188,7 @@ it from its device list).
 ## 9. Milestones
 
 0. **Hardware spike — done** (2026-09-28). See §10.
-1. Config loading + validation, render module, mock backend, tests.
+1. Config loading + validation, render module, mock backend, tests — **done**.
 2. API with mock backend, tests.
 3. Web UI.
 4. Real Brother backend. **Blocked on the licence question in §10.**
