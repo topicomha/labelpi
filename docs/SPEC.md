@@ -189,7 +189,7 @@ it from its device list).
 
 0. **Hardware spike — done** (2026-09-28). See §10.
 1. Config loading + validation, render module, mock backend, tests — **done**.
-2. API with mock backend, tests.
+2. API with mock backend, tests — **done**.
 3. Web UI.
 4. Real Brother backend. **Blocked on the licence question in §10.**
 5. Real Phomemo backend (small in-house ESC/POS encoder + BLE via `bleak`).
