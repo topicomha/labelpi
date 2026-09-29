@@ -180,11 +180,13 @@ def test_cover_open(d30_config, die_label):
         make_printer(d30_config, FakeD30(cover=0x99)).print(label_image(die_label), die_label)
 
 
-def test_silent_status_still_prints(d30_config, die_label, caplog):
+def test_silent_printer_is_not_sent_the_job(d30_config, die_label):
+    """No answer at all = probably stuck mid-image: the job would print garbled."""
     fake = FakeD30(answers=False)
-    make_printer(d30_config, fake).print(label_image(die_label), die_label)
-    assert fake.job.endswith(END_OF_JOB)
-    assert "didn't answer the status check" in caplog.text
+    with pytest.raises(PrinterError, match="switch it off and on"):
+        make_printer(d30_config, fake).print(label_image(die_label), die_label)
+    assert not fake.job.endswith(END_OF_JOB)
+    assert fake.closed
 
 
 def test_not_reachable(d30_config, die_label):
@@ -206,9 +208,17 @@ def test_wrong_device(d30_config, die_label):
 
 def test_connection_drops_mid_job(d30_config, die_label):
     fake = FakeD30(fail_on_write=5)
-    with pytest.raises(PrinterUnavailable, match="connection lost"):
+    with pytest.raises(PrinterUnavailable, match=r"connection lost after \d+ of \d+ bytes"):
         make_printer(d30_config, fake).print(label_image(die_label), die_label)
     assert fake.closed
+
+
+def test_connection_drops_before_the_job(d30_config, die_label):
+    """Nothing of the image was sent, so the printer isn't stuck: plain error."""
+    fake = FakeD30(fail_on_write=2)  # fails right after the two status queries
+    with pytest.raises(PrinterUnavailable, match="connection lost") as caught:
+        make_printer(d30_config, fake).print(label_image(die_label), die_label)
+    assert "off and on" not in str(caught.value)
 
 
 def test_status(d30_config):

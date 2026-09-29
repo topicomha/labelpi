@@ -138,6 +138,12 @@ To push from the Pi you need GitHub credentials there, e.g. `gh auth login`
 
 ## Gotchas learned the hard way
 
+- **A half-sent D30 job wrecks the next one.** If the BLE link drops mid-image,
+  the D30 keeps waiting for the rest and takes the next job's bytes (status
+  queries included) as that rest: the next label comes out shifted across its
+  width, numbers cut off at one edge and reappearing at the other (seen
+  2026-09-28). A power cycle clears it. The backend now refuses to print when
+  the D30 answers neither status query, and a mid-job drop says to power-cycle.
 - A jammed D30 label swallows jobs silently while still reporting "paper
   present". If nothing comes out, reseat the roll.
 - The D30 disappears from scans while a phone is connected to it or when it
