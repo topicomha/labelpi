@@ -72,18 +72,54 @@ def _now() -> datetime:
 # ---------------------------------------------------------------------------
 @api.get("/printers")
 def list_printers():
-    registry = _state().registry
-    return jsonify(
-        [
-            {
-                "id": p.id,
-                "name": p.display_name,
-                "busy": registry.is_busy(p.id),
-                "labels": [_label_json(label) for label in p.labels],
-            }
-            for p in registry.all()
-        ]
-    )
+    return jsonify([_printer_json(p) for p in _state().registry.all()])
+
+
+def _printer_json(printer: Printer) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "id": printer.id,
+        "name": printer.display_name,
+        "busy": _state().registry.is_busy(printer.id),
+        "labels": [_label_json(label) for label in printer.labels],
+        "can_chain": printer.can_chain,
+    }
+    if printer.can_chain:
+        data["auto_feed"] = _state().settings.auto_feed(printer.id)
+    return data
+
+
+@api.put("/printers/<printer_id>/settings")
+def update_printer_settings(printer_id: str):
+    """{"auto_feed": false} -> chain labels (tape printers only). Saved in settings.json."""
+    printer = _printer(printer_id)
+    body = _json_body()
+    if set(body) - {"auto_feed"}:
+        raise bad_request('only "auto_feed" can be changed')
+    if "auto_feed" in body:
+        if not isinstance(body["auto_feed"], bool):
+            raise bad_request('"auto_feed" must be true or false')
+        if not printer.can_chain:
+            raise bad_request(f"{printer.display_name} always feeds each label out")
+        _state().settings.set_auto_feed(printer.id, body["auto_feed"])
+    return jsonify(_printer_json(printer))
+
+
+@api.post("/printers/<printer_id>/feed")
+def feed(printer_id: str):
+    """Feed the tape out to the cutter - after printing labels back to back."""
+    printer = _printer(printer_id)
+    if not printer.can_chain:
+        raise bad_request(f"{printer.display_name} has nothing to feed")
+    ms = _on_printer(printer, printer.feed)
+    log.info("fed %s in %d ms", printer.id, ms)
+    return jsonify(status="fed", printer=printer.id, ms=ms)
+
+
+def _printer(printer_id: str) -> Printer:
+    printer = _state().registry.get(printer_id)
+    if printer is None:
+        raise not_found(f'unknown printer "{printer_id}"')
+    return printer
 
 
 def _label_json(label: LabelConfig) -> dict[str, Any]:
@@ -246,15 +282,46 @@ def print_image():
 
 
 def _preview_or_print(printer: Printer, label: LabelConfig, image: Image.Image) -> Response:
+    chain = _chain_for(printer)
     if _is_preview():
         # Preview shows exactly what would be sent, after the backend's
         # prepare(). It doesn't take the lock: previews work while printing.
-        return _png_response(printer.prepare(image, label))
+        return _png_response(printer.prepare(image, label, chain))
 
+    ms = _on_printer(
+        printer, lambda: printer.print(printer.prepare(image, label, chain), label, chain)
+    )
+    log.info("printed on %s (%s, chain=%s) in %d ms", printer.id, label.id, chain, ms)
+    return jsonify(status="printed", printer=printer.id, ms=ms, fed=not chain)
+
+
+def _chain_for(printer: Printer) -> bool:
+    """
+    Print back to back (no feed-out) for this request? Only printers that can
+    chain; the request's "auto_feed" wins over the saved setting.
+    """
+    if not printer.can_chain:
+        return False
+    value: Any = None
+    if request.is_json:
+        body = request.get_json(silent=True)
+        value = body.get("auto_feed") if isinstance(body, dict) else None
+    elif request.form.get("auto_feed", "") != "":
+        value = _form_bool(request.form, "auto_feed")
+    if value is None:
+        value = _state().settings.auto_feed(printer.id)
+    if not isinstance(value, bool):
+        raise bad_request('"auto_feed" must be true or false')
+    return not value
+
+
+def _on_printer(printer: Printer, action: Callable[[], None]) -> int:
+    """Run a print/feed under the printer's lock, turning failures into API
+    errors (409 busy, 503 unavailable, 500 printer error). Returns ms taken."""
     started = time.monotonic()
     try:
         with _state().registry.claim(printer.id):
-            printer.print(printer.prepare(image, label), label)
+            action()
     except PrinterBusy:
         raise ApiError(409, "busy", f"{printer.id} is printing") from None
     except PrinterUnavailable as exc:
@@ -266,9 +333,7 @@ def _preview_or_print(printer: Printer, label: LabelConfig, image: Image.Image) 
     except Exception as exc:  # anything unexpected: log the traceback, answer 500
         log.exception("unexpected failure printing on %s", printer.id)
         raise ApiError(500, "printer_error", f"unexpected error: {exc}") from None
-    ms = round((time.monotonic() - started) * 1000)
-    log.info("printed on %s (%s) in %d ms", printer.id, label.id, ms)
-    return jsonify(status="printed", printer=printer.id, ms=ms)
+    return round((time.monotonic() - started) * 1000)
 
 
 # ---------------------------------------------------------------------------

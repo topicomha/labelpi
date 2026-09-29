@@ -85,3 +85,15 @@ def test_mock_printer_writes_png(registry, tmp_path):
     assert path.parent == tmp_path / "out"
     assert path.name.endswith("-die-12x50.png")
     assert Image.open(path).size == (400, 96)
+
+
+def test_cut_lines_are_dashed_at_both_ends():
+    from labelpi.printers.base import CUT_DASH_PX, add_cut_lines
+
+    image = Image.new("1", (100, 64), 1)
+    marked = add_cut_lines(image)
+    assert image.getpixel((0, 0)) != 0  # the original is untouched
+    for x in (0, 1, 98, 99):
+        assert marked.getpixel((x, 0)) == 0  # a dash
+        assert marked.getpixel((x, CUT_DASH_PX)) != 0  # a gap
+    assert all(marked.getpixel((x, y)) != 0 for x in range(2, 98) for y in range(64))

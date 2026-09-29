@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from labelpi.config import LabelConfig, PrinterConfig
 
@@ -25,7 +25,18 @@ class PrinterError(Exception):
 
 
 class Printer(ABC):
-    """Base class (like an abstract class in C#) for one configured printer."""
+    """
+    Base class (like an abstract class in C#) for one configured printer.
+
+    Chaining (continuous tape only): normally each label is fed out past the
+    cutter when it's done, which leaves ~24 mm of blank tape at the start of
+    the next one. With chain=True labels print back to back instead, with a
+    dashed cut line at both ends of each, and feed() pushes the finished strip
+    out to the cutter at the end.
+    """
+
+    #: True if this printer can print labels back to back (see chain above).
+    can_chain: bool = False
 
     def __init__(self, config: PrinterConfig):
         self.config = config
@@ -43,15 +54,38 @@ class Printer(ABC):
         return self.config.labels
 
     @abstractmethod
-    def prepare(self, image: Image.Image, label: LabelConfig) -> Image.Image:
-        """Rotate/pad/convert a rendered label into exactly what this printer takes.
-        Preview shows the result of this, so it must not have side effects."""
+    def prepare(self, image: Image.Image, label: LabelConfig, chain: bool = False) -> Image.Image:
+        """Rotate/pad/convert a rendered label into exactly what this printer takes
+        (plus cut lines if chaining). Preview shows the result of this, so it must
+        not have side effects."""
 
     @abstractmethod
-    def print(self, image: Image.Image, label: LabelConfig) -> None:
+    def print(self, image: Image.Image, label: LabelConfig, chain: bool = False) -> None:
         """Connect, send the prepared image, wait until done, disconnect.
+        chain=True: don't feed the label out afterwards (only if can_chain).
         Raise PrinterUnavailable or PrinterError on failure."""
+
+    def feed(self) -> None:
+        """Feed the tape out to the cutter (after chained labels)."""
+        raise PrinterError(f"{self.display_name} has nothing to feed")
 
     def status(self) -> dict:
         """Best-effort status (battery, tape...). Empty if the backend has none."""
         return {}
+
+
+CUT_DASH_PX = 4  # dash and gap length of the cut lines
+
+
+def add_cut_lines(image: Image.Image) -> Image.Image:
+    """
+    A copy of a label image with a dashed line down both ends: where to cut
+    when labels were printed back to back. Labels have margins at their ends,
+    so the lines don't touch the content.
+    """
+    marked = image.convert("1").copy()
+    draw = ImageDraw.Draw(marked)
+    for x in (0, 1, marked.width - 2, marked.width - 1):  # 2 px wide at each end
+        for y in range(0, marked.height, 2 * CUT_DASH_PX):
+            draw.line([(x, y), (x, min(y + CUT_DASH_PX - 1, marked.height - 1))], fill=0)
+    return marked
