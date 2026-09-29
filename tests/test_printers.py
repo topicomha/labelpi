@@ -78,10 +78,10 @@ def test_busy_across_threads(registry):
 
 def test_mock_printer_writes_png(registry, tmp_path):
     printer = registry.get("die")
-    label = printer.config.label("12x40")
+    label = printer.config.label("12x50")
     image = printer.prepare(render_text("Hello", label, printer.config.dpi), label)
     printer.print(image, label)
     [path] = printer.printed
     assert path.parent == tmp_path / "out"
-    assert path.name.endswith("-die-12x40.png")
-    assert Image.open(path).size == (320, 96)
+    assert path.name.endswith("-die-12x50.png")
+    assert Image.open(path).size == (400, 96)

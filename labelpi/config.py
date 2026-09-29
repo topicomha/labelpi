@@ -4,7 +4,7 @@ Load and validate config/printers.toml.
 The whole file is checked at startup so mistakes fail loudly and early, with a
 message that names the file, the printer/label/template and the field - e.g.
 
-    config/printers.toml: printers[1] (id "d30") > labels[0] (id "12x40"):
+    config/printers.toml: printers[1] (id "d30") > labels[0] (id "12x50"):
     "length_mm" is required for a fixed-size label
 
 The result is a tree of frozen dataclasses (think C# records): read-only after

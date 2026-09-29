@@ -16,7 +16,7 @@ _Last updated: 2026-09-28._
 | 3 | Web UI | done |
 | 4 | Brother PT-P300BT backend (own encoder) | done — **real prints verified** |
 | 8 | Templates: fill-in fields, date maths, editor on the page | done |
-| 5 | Phomemo D30 backend (BLE) | merged — **printed physical label not yet checked** (see below) |
+| 5 | Phomemo D30 backend (BLE) | done — **real print verified** (calibration ruler, 2026-09-28) |
 | 9 | Label sizes managed from the page | next |
 | 7 | Printer setup from the page: discovery, pairing, calibration | after 9 |
 | 6 | Deploy to the Pi Zero W: systemd, auto-deploy, Pi setup verified | last |
@@ -38,18 +38,26 @@ Zero W.
   spike encoder that printed correctly.
 - **Phomemo D30** — the Milestone 5 backend connected over BLE (~2.7 s),
   got paper/cover status, and the printer acknowledged all 3,857 bytes of a
-  Freezer-template job. **Nobody has looked at the resulting label yet.** The
-  spike's BLE print (same bytes) was readable, but started ~12 mm into the
-  label and ran off its far end.
+  Freezer-template job (nobody looked at that label). On 2026-09-28 the
+  backend's calibration ruler (`POST /api/print/ruler`, after a power cycle)
+  printed identically to the spike's: **verified**. Connect ~2.7–3.4 s, send
+  ~0.9 s, whole request ~11 s (4 s settle wait included).
+- **D30 label geometry — calibrated 2026-09-28** with a ruler print (the
+  spike's; now `POST /api/print/ruler`, same drawing): the labels
+  are **12 × 50 mm**; a 50 mm image lands with 0 ~0.5 mm before the leading
+  edge and 50 at the far end, true to scale, reading the right way round.
+  So `length_mm = 50`, `offset_mm = 0`. The earlier "~12 mm in" was a 40 mm
+  image on a 50 mm label — the printer aligns images with the label's end.
 
 ## Open questions — resolve first
 
-1. **Check the D30 label from the Milestone 5 test**: readable? right way
-   round? where on the label? Measure one label's real length (gap to gap).
-   Then set `length_mm` / `offset_mm` for it in `config/printers.toml`
-   (`offset_mm` shifts the print along the label; + = later) and correct
-   `config/printers.example.toml` (12 × 40 is unconfirmed — may be 12 × 50).
-   Use `spike/spike_phomemo.py --calibrate` to print a mm ruler if needed.
+1. **Watch the D30's first-job-after-idle Bluetooth drops** ("GATT Protocol
+   Error: Unlikely Error" straight after connecting, seen three times on
+   2026-09-28). The backend now waits 0.5 s after connecting and retries once
+   if the link drops before any image data; check in the log
+   (`trying once more`) whether that's enough. Note: the D30's label id
+   changed from `12x40` to `12x50` - a browser that remembered `12x40` just
+   falls back to the first label.
 2. Three-line templates (e.g. Freezer) are small on 12 mm Brother tape (all
    lines share ~9 mm). Owner may want one-line, tape-friendly variants.
 3. Brother 9 mm / 6 mm bands (48 / 32 px) are unverified guesses.
@@ -132,6 +140,12 @@ To push from the Pi you need GitHub credentials there, e.g. `gh auth login`
 
 ## Gotchas learned the hard way
 
+- **A half-sent D30 job wrecks the next one.** If the BLE link drops mid-image,
+  the D30 keeps waiting for the rest and takes the next job's bytes (status
+  queries included) as that rest: the next label comes out shifted across its
+  width, numbers cut off at one edge and reappearing at the other (seen
+  2026-09-28). A power cycle clears it. The backend now refuses to print when
+  the D30 answers neither status query, and a mid-job drop says to power-cycle.
 - A jammed D30 label swallows jobs silently while still reporting "paper
   present". If nothing comes out, reseat the roll.
 - The D30 disappears from scans while a phone is connected to it or when it

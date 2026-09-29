@@ -150,14 +150,18 @@ config — use this for local dev and in tests. `LABELPI_CONFIG` and
 3. **A sent job is not a printed label.** The D30 sends no completion message
    over BLE and swallowed jobs silently when a label was jammed. The Brother
    does confirm completion — wait for it before disconnecting.
-4. **D30 label position is uncalibrated** (printing started ~12 mm into the
-   label); label size may be 12 × 50, not 12 × 40. Calibration comes with the
-   setup UI (Milestone 7).
+4. **D30 labels are 12 × 50 mm** (measured). The printer lines a full-length
+   image up with the label itself (0 lands ~0.5 mm early), so `offset_mm = 0`.
+   The old "starts ~12 mm in" was a 40 mm image on a 50 mm label. A
+   calibration UI for other rolls comes with Milestone 7.
 5. **Licences.** Check the licence of each piece of code before vendoring it and
    keep its LICENSE file alongside it in `vendor/`.
-6. The `spike/` scripts are superseded by the real backends (Milestones 4–5)
-   but their `--calibrate` rulers are the reference for the calibration UI
-   (Milestone 7). Delete the folder once that exists.
+6. **Calibrating** a label: `POST /api/print/ruler` prints a mm ruler through
+   the real backend (so the current `offset_mm` applies); read where 0 and the
+   end land and adjust `length_mm` / `offset_mm`. The Milestone 0 `spike/`
+   scripts are gone (they're in git history before 2026-09-28's cleanup).
+   Labels in use: Brother 12 mm tape, D30 12 × 50 mm - add others only when
+   needed.
 
 ## Working agreements (how the owner wants this repo run)
 

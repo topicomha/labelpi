@@ -36,6 +36,8 @@ log = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT_S = 20  # includes BlueZ finding the printer if it isn't cached
 QUERY_TIMEOUT_S = 1.5
+POWER_CYCLE_HINT = "switch it off and on, then print again"
+SETTLE_AFTER_CONNECT_S = 0.5  # writing at once after connecting failed ("GATT Unlikely Error")
 PRINT_SETTLE_S = 4.0  # the D30 doesn't say when it's done; the spike waited 4 s
 CHUNK_BYTES = 128  # "works best with 128 bytes" (odensc); each write is acknowledged
 HEAD_PX = 96  # print head width: 12 bytes per row
@@ -99,6 +101,10 @@ def answer_byte(data: bytes, code: int) -> int | None:
 # ---------------------------------------------------------------------------
 # Connection
 # ---------------------------------------------------------------------------
+class _DroppedBeforeImage(PrinterUnavailable):
+    """The link dropped before any image data was sent: safe to try again."""
+
+
 class Session(Protocol):
     """One BLE connection to the printer - lets tests pass in a fake D30."""
 
@@ -187,7 +193,17 @@ class PhomemoPrinter(Printer):
 
     def print(self, image: Image.Image, label: LabelConfig) -> None:
         job = encode_job(to_head_orientation(image))
-        asyncio.run(self._print(job))
+        try:
+            asyncio.run(self._print(job))
+        except _DroppedBeforeImage as first:
+            # The first job after the D30 has been idle sometimes loses the
+            # link before any image data went out. Nothing half-sent is left
+            # in the printer, so one fresh attempt is safe.
+            log.warning("%s: %s - trying once more", self.id, first)
+            try:
+                asyncio.run(self._print(job))
+            except _DroppedBeforeImage as second:
+                raise PrinterUnavailable(str(second)) from second
 
     def status(self) -> dict:
         return asyncio.run(self._status())
@@ -195,11 +211,13 @@ class PhomemoPrinter(Printer):
     # --- async steps -------------------------------------------------------------
     async def _print(self, job: bytes) -> None:
         session = await self._open()
+        sent = 0
         try:
             await self._check_ready(session)
             started = time.monotonic()
             for start in range(0, len(job), CHUNK_BYTES):
                 await session.write(job[start : start + CHUNK_BYTES])
+                sent = start + CHUNK_BYTES
             log.info(
                 "%s: sent %d bytes in %d ms", self.id, len(job), (time.monotonic() - started) * 1000
             )
@@ -207,7 +225,15 @@ class PhomemoPrinter(Printer):
         except (PrinterError, PrinterUnavailable):
             raise
         except Exception as exc:  # BleakError, OSError, EOFError... a dropped link
-            raise PrinterUnavailable(f"{self.display_name}: connection lost ({exc})") from exc
+            if 0 < sent < len(job):
+                # The D30 now waits for the rest of this image and would take
+                # the next job's bytes as that rest: a garbled, shifted label.
+                # Nothing we can send fixes it; a power cycle does.
+                raise PrinterUnavailable(
+                    f"{self.display_name}: connection lost after {sent} of {len(job)} bytes "
+                    f"({exc}) - it may be stuck on the half-sent label: {POWER_CYCLE_HINT}"
+                ) from exc
+            raise _DroppedBeforeImage(f"{self.display_name}: connection lost ({exc})") from exc
         finally:
             await self._close(session)
 
@@ -236,6 +262,7 @@ class PhomemoPrinter(Printer):
                 f"{self.display_name} not reachable ({exc or type(exc).__name__})"
             ) from exc
         log.info("%s: connected in %d ms", self.id, (time.monotonic() - started) * 1000)
+        await asyncio.sleep(SETTLE_AFTER_CONNECT_S)
         return session
 
     async def _ask(self, session: Session, query: bytes, code: int) -> int | None:
@@ -256,8 +283,16 @@ class PhomemoPrinter(Printer):
             raise PrinterError(f"{self.display_name}: the cover is open")
         if paper == PAPER_MISSING:
             raise PrinterError(f"{self.display_name}: no labels loaded")
+        if paper is None and cover is None:
+            # A D30 that still waits for the rest of an interrupted image takes
+            # our queries as picture data, so it can't answer. Printing now
+            # would come out shifted and garbled (seen 2026-09-28), so don't.
+            raise PrinterError(
+                f"{self.display_name} didn't answer the status check - it may be stuck on "
+                f"an interrupted label: {POWER_CYCLE_HINT}"
+            )
         if paper is None or cover is None:
-            # Not fatal: the job may still print. Worth a line in the log.
+            # One answer came, so it's listening; just note the missing one.
             log.warning(
                 "%s: didn't answer the status check (paper=%s cover=%s)", self.id, paper, cover
             )

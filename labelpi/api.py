@@ -24,7 +24,7 @@ from PIL import Image, UnidentifiedImageError
 from labelpi.app import AppState
 from labelpi.config import LabelConfig
 from labelpi.printers import Printer, PrinterBusy, PrinterError, PrinterUnavailable
-from labelpi.render import RenderError, fit_image, render_text
+from labelpi.render import RenderError, fit_image, render_ruler, render_text
 from labelpi.templates import Template, TemplateError, fill_template
 
 log = logging.getLogger(__name__)
@@ -197,6 +197,23 @@ def print_template():
             label,
             printer.config.dpi,
             align=_optional(body, "align", str, "center"),
+        )
+    )
+    return _preview_or_print(printer, label, image)
+
+
+@api.post("/print/ruler")
+def print_ruler():
+    """
+    Print a mm ruler along the label (render.render_ruler) to calibrate it:
+    see where 0 and the end land, then set length_mm / offset_mm in
+    printers.toml. Goes through prepare(), so the current offset_mm applies.
+    """
+    body = _json_body()
+    printer, label = _printer_and_label(body.get("printer"), body.get("label"))
+    image = _render(
+        lambda: render_ruler(
+            label, printer.config.dpi, length_mm=_optional(body, "length_mm", float, None)
         )
     )
     return _preview_or_print(printer, label, image)

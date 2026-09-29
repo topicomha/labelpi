@@ -52,11 +52,13 @@ dpi = 203                      # 8 px/mm; print head is 96 px = 12 mm wide
 
   # Fixed die-cut labels. Anything wider than 12 mm still only gets 12 mm printed.
   [[printers.labels]]
-  id = "12x40"
-  name = "12 x 40 mm"
+  id = "12x50"
+  name = "12 x 50 mm"
   width_mm = 12
-  length_mm = 40               # VERIFY - our roll may be 12 x 50
-  offset_mm = 0                # VERIFY - printing started ~12 mm into the label
+  length_mm = 50               # measured gap to gap with a ruler print
+  offset_mm = 0                # + moves the print later along the label. The
+                               # D30 lines a full-length image up with the label
+                               # by itself (0 lands ~0.5 mm early): keep 0.
   continuous = false
 
 # ---------------------------------------------------------------------------
