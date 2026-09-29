@@ -2,7 +2,7 @@
 Ready-made templates a fresh install starts with. [[templates]] in
 printers.toml and anything saved from the page come on top.
 
-Designed for small, wide labels (12 x 40 mm, 12 mm tape): positions are
+Designed for small, wide labels (12 x 50 mm, 12 mm tape): positions are
 percentages, so 10 % of the height is ~1 mm and 10 % of the length ~4 mm.
 """
 
