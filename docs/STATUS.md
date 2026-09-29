@@ -16,7 +16,7 @@ _Last updated: 2026-09-28._
 | 3 | Web UI | done |
 | 4 | Brother PT-P300BT backend (own encoder) | done — **real prints verified** |
 | 8 | Templates: fill-in fields, date maths, editor on the page | done |
-| 10 | Template layouts: background, shapes, icons, pictures | done on branch `templates-layout` — **not yet printed on real hardware** |
+| 10 | Template layouts: background, shapes, icons, pictures; auto length on tape; export / import / duplicate | done — starters printed on both printers (see open question 2) |
 | 5 | Phomemo D30 backend (BLE) | done — **real print verified** (calibration ruler, 2026-09-28) |
 | 9 | Label sizes managed from the page | next |
 | 7 | Printer setup from the page: discovery, pairing, calibration | after 9 |
@@ -73,7 +73,8 @@ Zero W.
    (`trying once more`) whether that's enough. Note: the D30's label id
    changed from `12x40` to `12x50` - a browser that remembered `12x40` just
    falls back to the first label.
-2. **Print the new layout starters on both printers** and check: thin lines
+2. **Look at the printed layout starters** (sent 2026-09-28: Freezer on the
+   D30; Freezer, Opened, Container chained on the Brother) and check: thin lines
    (0.3 mm = 2 px on the Brother) visible? small second-line text readable?
    icons crisp? frames not cut off at the label edge? Adjust
    `labelpi/starters.py` to taste.
@@ -89,6 +90,10 @@ Font Awesome Free 6 / Tabler / Material Design Icons TTFs in
 `config/assets/` via `/api/assets`. The page edits layouts as a list of
 element cards (no drag-and-drop) with live preview and a JSON view.
 Details: SPEC §12.
+On tape a layout is as long as its text needs by default (`tape_length_mm:
+null`, min 25 mm). Templates export to / import from a JSON file with their
+pictures embedded (`/api/templates/export`, `/api/templates/import`);
+identical templates are skipped on import.
 
 ## Next: Milestone 9 — label sizes from the page
 
