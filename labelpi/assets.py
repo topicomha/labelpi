@@ -6,8 +6,8 @@ next to settings.json), named after a hash of its content: <id>.png. The same
 picture uploaded twice gets the same id. Templates refer to an image by id.
 
 On upload the image is flattened (transparency -> white), turned greyscale
-and scaled down to at most MAX_SIDE_PX, since labels are tiny: a 40 mm label
-at 203 dpi is ~320 px long. That keeps files and memory small on the Pi.
+and scaled down to at most MAX_SIDE_PX, since labels are tiny: a 50 mm label
+at 203 dpi is 400 px long. That keeps files and memory small on the Pi.
 """
 
 from __future__ import annotations
