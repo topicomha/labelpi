@@ -267,6 +267,135 @@ def test_edit_or_delete_unknown_template(client):
     assert_error(client.delete("/api/templates/nope"), 404, "not_found")
 
 
+# --- layout templates -------------------------------------------------------------
+FREEZER_LAYOUT = {
+    "background": {"frame": "rounded"},
+    "elements": [
+        {"type": "icon", "w": 20, "icon": "fa-solid:snowflake"},
+        {"type": "text", "x": 25, "w": 75, "text": "{field:Item}\n{date:%d %b}"},
+    ],
+}
+
+
+def test_starters_are_layouts(client):
+    by_id = {t["id"]: t for t in client.get("/api/templates").get_json()}
+    freezer = by_id["freezer"]
+    assert "text" not in freezer and freezer["layout"]["elements"]
+
+
+def test_create_layout_template_fills_in_defaults(client):
+    created = client.post("/api/templates", json={"name": "Ice", "layout": FREEZER_LAYOUT})
+    assert created.status_code == 201, created.get_json()
+    template = created.get_json()
+    assert template["fields"] == ["Item"] and "text" not in template
+    assert template["layout"]["background"]["frame_mm"] == 0.4
+    assert template["layout"]["elements"][1]["align"] == "center"
+
+    response = preview(client, template="ice", fields={"Item": "Peas"})
+    assert response.mimetype == "image/png"
+    assert Image.open(io.BytesIO(response.data)).size == (400, 96)
+
+
+def test_preview_unsaved_layout_on_tape(client):
+    response = preview(client, label="tze-12", printer="tape", layout=FREEZER_LAYOUT, length_mm=30)
+    assert response.status_code == 200, response.get_json()
+    assert Image.open(io.BytesIO(response.data)).size == (round(30 * 180 / 25.4), 64)
+
+
+@pytest.mark.parametrize(
+    "body, detail",
+    [
+        ({"name": "X", "text": "x", "layout": FREEZER_LAYOUT}, "not both"),
+        ({"name": "X", "layout": {"elements": [{"type": "blob"}]}}, "type must be one of"),
+        (
+            {"name": "X", "layout": {"elements": [{"type": "image", "asset": "0" * 16}]}},
+            "no uploaded",
+        ),
+    ],
+)
+def test_create_layout_template_errors(client, body, detail):
+    response = client.post("/api/templates", json=body)
+    assert_error(response, 400, "bad_request")
+    assert detail in response.get_json()["detail"]
+
+
+def test_layout_that_does_not_fit_is_a_400(client):
+    layout = {"elements": [{"type": "text", "w": 1, "h": 1, "text": "much too long"}]}
+    response = preview(client, layout=layout)
+    assert_error(response, 400, "bad_request")
+    assert "element 1" in response.get_json()["detail"]
+
+
+# --- icons -----------------------------------------------------------------------------
+def test_search_icons(client):
+    body = client.get("/api/icons?q=snowflake&style=fa-solid").get_json()
+    assert body["icons"][0] == {
+        "id": "fa-solid:snowflake",
+        "style": "fa-solid",
+        "name": "snowflake",
+        "codepoint": 0xF2DC,
+    }
+    fonts = {s["id"]: s["font"] for s in body["styles"]}
+    assert fonts["fa-solid"] == "/vendor/fontawesome/fa-solid-900.ttf"
+    assert len(client.get("/api/icons?limit=3").get_json()["icons"]) == 3
+    assert_error(client.get("/api/icons?limit=lots"), 400, "bad_request")
+
+
+def test_icon_fonts_are_served(client):
+    body = client.get("/api/icons?limit=1").get_json()
+    for style in body["styles"]:
+        response = client.get(style["font"])
+        assert response.status_code == 200, style["font"]
+        response.close()
+    for url in ("/vendor/fontawesome/LICENSE.txt", "/vendor/../app.py", "/vendor/icons.json"):
+        assert client.get(url).status_code == 404, url
+
+
+# --- assets --------------------------------------------------------------------------
+def upload_asset(client, data=None):
+    form = {"file": (io.BytesIO(data or png_bytes((60, 30))), "logo.png")}
+    return client.post("/api/assets", data=form, content_type="multipart/form-data")
+
+
+def test_upload_list_get_delete_asset(client):
+    response = upload_asset(client)
+    assert response.status_code == 201, response.get_json()
+    asset = response.get_json()
+    assert (asset["width"], asset["height"]) == (60, 30)
+    assert client.get("/api/assets").get_json() == [asset]
+    image = client.get(asset["url"])
+    assert image.mimetype == "image/png"
+    image.close()
+    assert client.delete(asset["url"]).status_code == 204
+    assert client.get("/api/assets").get_json() == []
+    assert_error(client.get(asset["url"]), 404, "not_found")
+    assert_error(client.delete(asset["url"]), 404, "not_found")
+
+
+def test_upload_asset_errors(client):
+    assert_error(
+        client.post("/api/assets", data={}, content_type="multipart/form-data"), 400, "bad_request"
+    )
+    assert_error(upload_asset(client, b"not an image"), 400, "bad_request")
+
+
+def test_layout_with_image_and_asset_in_use(client):
+    asset = upload_asset(client).get_json()
+    layout = {
+        "background": {"image": {"asset": asset["id"], "fit": "cover"}},
+        "elements": [{"type": "image", "asset": asset["id"], "w": 30, "dither": True}],
+    }
+    assert client.post("/api/templates", json={"name": "Logo", "layout": layout}).status_code == 201
+    response = preview(client, template="logo")
+    assert response.status_code == 200, response.get_json()
+
+    in_use = client.delete(asset["url"])
+    assert_error(in_use, 409, "in_use")
+    assert '"Logo"' in in_use.get_json()["detail"]
+    client.delete("/api/templates/logo")
+    assert client.delete(asset["url"]).status_code == 204
+
+
 # --- print image -------------------------------------------------------------
 def test_print_image(client, registry):
     response = upload(client)

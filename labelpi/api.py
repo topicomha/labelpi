@@ -21,8 +21,11 @@ from typing import Any
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from PIL import Image, UnidentifiedImageError
 
+from labelpi import icons
 from labelpi.app import AppState
+from labelpi.assets import AssetError
 from labelpi.config import LabelConfig
+from labelpi.layout import normalise_layout, render_layout
 from labelpi.printers import Printer, PrinterBusy, PrinterError, PrinterUnavailable
 from labelpi.render import RenderError, fit_image, render_ruler, render_text
 from labelpi.templates import Template, TemplateError, fill_template
@@ -144,7 +147,9 @@ def list_templates():
 def create_template():
     body = _json_body()
     template = _template_call(
-        lambda: _state().settings.add_template(body.get("name"), _required_str(body, "text"))
+        lambda: _state().settings.add_template(
+            body.get("name"), body.get("text"), body.get("layout")
+        )
     )
     return jsonify(_template_json(template)), 201
 
@@ -154,7 +159,7 @@ def update_template(template_id: str):
     body = _json_body()
     template = _template_call(
         lambda: _state().settings.update_template(
-            template_id, body.get("name"), _required_str(body, "text")
+            template_id, body.get("name"), body.get("text"), body.get("layout")
         )
     )
     if template is None:
@@ -170,12 +175,14 @@ def delete_template(template_id: str):
 
 
 def _template_json(template: Template) -> dict[str, Any]:
-    return {
-        "id": template.id,
-        "name": template.name,
-        "text": template.text,
-        "fields": template.fields,
-    }
+    """A template has either "text" or "layout", plus the fields it asks for."""
+    data: dict[str, Any] = {"id": template.id, "name": template.name}
+    if template.layout is not None:
+        data["layout"] = template.layout
+    else:
+        data["text"] = template.text
+    data["fields"] = template.fields
+    return data
 
 
 def _template_call(action: Callable[[], Any]) -> Any:
@@ -210,8 +217,8 @@ def print_text():
 @api.post("/print/template")
 def print_template():
     """
-    Print a saved template ("template": id) or unsaved template text
-    ("text": "..." - the editor's live preview uses this), with "fields":
+    Print a saved template ("template": id), or an unsaved one given as
+    "text" or "layout" (the editor's live preview uses these), with "fields":
     {"Item": "Chicken soup"} filling in its {field:...} blanks.
     """
     body = _json_body()
@@ -221,20 +228,40 @@ def print_template():
         template = _state().settings.template(template_id)
         if template is None:
             raise not_found(f'unknown template "{template_id}"')
-        text = template.text
+        text, layout = template.text, template.layout
+    elif "layout" in body:
+        text, layout = "", body["layout"]
     else:
-        text = _required_str(body, "text")
+        text, layout = _required_str(body, "text"), None
     fields = body.get("fields") or {}
     if not isinstance(fields, dict) or not all(isinstance(v, str) for v in fields.values()):
         raise bad_request('"fields" must be an object of text values, e.g. {"Item": "Soup"}')
-    image = _render(
-        lambda: render_text(
-            fill_template(text, _now(), fields),
-            label,
-            printer.config.dpi,
-            align=_optional(body, "align", str, "center"),
+    length_mm = _optional(body, "length_mm", float, None)
+    dpi = printer.config.dpi
+
+    if layout is not None:
+        assets = _state().assets
+        image = _render(
+            lambda: render_layout(
+                normalise_layout(layout, assets.exists),
+                label,
+                dpi,
+                _now(),
+                fields,
+                assets,
+                length_mm=length_mm,
+            )
         )
-    )
+    else:
+        image = _render(
+            lambda: render_text(
+                fill_template(text, _now(), fields),
+                label,
+                dpi,
+                align=_optional(body, "align", str, "center"),
+                length_mm=length_mm,
+            )
+        )
     return _preview_or_print(printer, label, image)
 
 
@@ -279,6 +306,83 @@ def print_image():
         )
     )
     return _preview_or_print(printer, label, image)
+
+
+# ---------------------------------------------------------------------------
+# Icons: search the bundled icon fonts
+# ---------------------------------------------------------------------------
+@api.get("/icons")
+def search_icons():
+    """
+    ?q=snow&style=fa-solid&limit=60 -> matching icons, best first, plus the
+    list of styles (each style is one font; "font" is its URL, for showing
+    the icons on the page). Use an icon's "id" in a layout's icon element.
+    """
+    style = request.args.get("style") or None
+    try:
+        limit = int(request.args.get("limit", "60"))
+    except ValueError:
+        raise bad_request('"limit" must be a whole number') from None
+    found = icons.search(request.args.get("q", ""), style=style, limit=limit)
+    return jsonify(
+        styles=[
+            {"id": s.id, "label": s.label, "font": f"/vendor/{s.font}"} for s in icons.styles()
+        ],
+        icons=[
+            {"id": i.id, "style": i.style, "name": i.name, "codepoint": i.codepoint} for i in found
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Assets: images uploaded for layouts (backgrounds, logos)
+# ---------------------------------------------------------------------------
+@api.get("/assets")
+def list_assets():
+    return jsonify([_asset_json(info) for info in _state().assets.list()])
+
+
+@api.post("/assets")
+def upload_asset():
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        raise bad_request('"file" is required (multipart/form-data upload)')
+    source = _open_image(upload.stream)
+    try:
+        info = _state().assets.add(source)
+    except AssetError as exc:
+        raise bad_request(str(exc)) from None
+    return jsonify(_asset_json(info)), 201
+
+
+@api.get("/assets/<asset_id>")
+def get_asset(asset_id: str):
+    try:
+        path = _state().assets.path(asset_id)
+    except AssetError as exc:
+        raise not_found(str(exc)) from None
+    return send_file(path, mimetype="image/png", max_age=0)
+
+
+@api.delete("/assets/<asset_id>")
+def delete_asset(asset_id: str):
+    users = _state().settings.templates_using_asset(asset_id)
+    if users:
+        names = ", ".join(f'"{t.name}"' for t in users)
+        raise ApiError(409, "in_use", f"this image is used by {names}")
+    if not _state().assets.delete(asset_id):
+        raise not_found(f'unknown image "{asset_id}"')
+    return "", 204
+
+
+def _asset_json(info: Any) -> dict[str, Any]:
+    return {
+        "id": info.id,
+        "width": info.width,
+        "height": info.height,
+        "bytes": info.bytes,
+        "url": f"/api/assets/{info.id}",
+    }
 
 
 def _preview_or_print(printer: Printer, label: LabelConfig, image: Image.Image) -> Response:

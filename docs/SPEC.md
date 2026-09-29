@@ -15,8 +15,9 @@ from scripts, without a phone, via a small service on a Pi Zero W on the LAN.
    label and converted to black and white.
 3. **Templates** — ready-made labels with blanks to fill in and dates worked
    out for you (e.g. Freezer: *item*, frozen *today*, use by *today + 3
-   months*). Starters are built in; add, edit and delete them on the page.
-   See §12.
+   months*), laid out with a background (colour, frame, picture) and
+   positioned text, icons, boxes, circles, lines and pictures. Starters are
+   built in; add, edit and delete them on the page. See §12.
 4. **Preview** — any of the above can be previewed as a PNG instead of printed.
 5. **Label sizes** — per-printer lists; the UI only shows sizes that belong to
    the selected printer. Managing them from the page is Milestone 9.
@@ -86,14 +87,31 @@ previews (PNG).
 ### Templates
 ```
 GET    /api/templates           -> [{ "id": "freezer", "name": "Freezer",
-                                      "text": "{field:Item}\nFrozen {date:%d %b %Y}\n...",
-                                      "fields": ["Item"] }]
+                                      "layout": { ... }, "fields": ["Item"] }]
+POST   /api/templates           { "name": "Jar", "layout": { ... } }        -> 201 + template
 POST   /api/templates           { "name": "Jar", "text": "{field:Contents}" } -> 201 + template
-PUT    /api/templates/<id>      { "name": "...", "text": "..." }             -> template
+PUT    /api/templates/<id>      { "name": "...", "layout": { ... } }          -> template
 DELETE /api/templates/<id>                                                   -> 204
 ```
-Bad template text or name → `400`; unknown id → `404`. New ids come from the
+A template has either `"layout"` (§12) or plain `"text"` (every line centred,
+as large as fits), never both. Layouts come back with every default filled
+in. Bad template or name → `400`; unknown id → `404`. New ids come from the
 name (`"Freezer bag"` → `freezer-bag`, `freezer-bag-2` if taken).
+
+### Icons and pictures (for layouts)
+```
+GET    /api/icons?q=snow&style=fa-solid&limit=60
+         -> { "styles": [{ "id": "fa-solid", "label": "...", "font": "/vendor/....ttf" }],
+              "icons":  [{ "id": "fa-solid:snowflake", "style": "fa-solid",
+                           "name": "snowflake", "codepoint": 62172 }] }
+GET    /api/assets              -> [{ "id", "width", "height", "bytes", "url" }]
+POST   /api/assets              multipart "file" (PNG/JPEG/GIF/BMP) -> 201 + asset
+GET    /api/assets/<id>         -> image/png
+DELETE /api/assets/<id>         -> 204; 409 "in_use" if a template uses it
+```
+Icon search matches names and keywords, best first; empty `q` lists
+alphabetically; `limit` ≤ 200. `/vendor/<library>/<font>.ttf` serves the icon
+fonts so the page can show the icons it will print.
 
 ### `POST /api/print/text`
 ```json
@@ -133,11 +151,13 @@ Fields: `printer`, `label`, `file`, optional `dither`, `invert`, `length_mm`.
 ### `POST /api/print/template`
 ```json
 { "printer": "d30", "label": "12x50", "template": "freezer",
-  "fields": { "Item": "Chicken soup" }, "align": "center" }
+  "fields": { "Item": "Chicken soup" }, "length_mm": null }
 ```
-Instead of `"template": id`, `"text": "<template text>"` prints/previews an
-unsaved template (the page's editor uses this for its live preview). Missing
-fields print as blank lines.
+Instead of `"template": id`, `"layout": {...}` or `"text": "..."` prints/
+previews an unsaved template (the page's editor uses this for its live
+preview). Missing fields print as blanks. `length_mm` sets the length on
+continuous tape (default: the layout's `tape_length_mm`; text templates are as
+long as their text). `"align"` applies to text templates only.
 
 ### Preview
 Add `?preview=1` to any `print/*` endpoint → `200 image/png` of exactly what
@@ -178,8 +198,14 @@ One page, responsive from ~360 px phone width up to desktop.
   - Text: textarea, align buttons.
   - Image: file picker (plus drag-drop on desktop), dither/invert toggles.
   - Templates: one button per template; a text box for each `{field:...}`;
-    "Edit this template" / "+ New template" open an editor (name, text,
-    syntax help, Save / Cancel / Delete) whose text previews live.
+    "Edit this template" / "+ New template" open the layout editor: name;
+    background (colour, frame, frame thickness, picture, length on tape);
+    the element list (one collapsible card per element with its settings,
+    move up/down, duplicate, remove; "Add" Text / Icon / Box / Circle / Line
+    / Picture); an icon search that shows the icons in their own fonts; a
+    picture chooser with upload; an "Edit as JSON" view; Save / Cancel /
+    Delete. Every change previews live. Old text templates open as one text
+    element and are saved as layouts. No drag-and-drop: positions are typed.
     Picking a template selects and previews it; Print prints it.
 - Tape printers: a "Feed out after each label" checkbox (saved on the Pi)
   and, when it's off, a **Feed & cut** button next to Print.
@@ -244,8 +270,10 @@ it from its device list).
 8. Templates with fill-in fields and date maths, editable on the page (§12)
    — **done**.
 9. Label sizes managed from the page, per printer (saved in settings.json).
+10. Template layouts: backgrounds, shapes, icons and pictures (§12) — **done**.
 
-Build order agreed 2026-09-28: 8 → 9 → 5 → 7 → 6. Each is its own branch
+Build order agreed 2026-09-28: 8 → 9 → 5 → 7 → 6; 10 was added and done
+before 9. Each is its own branch
 and PR, merged when tests pass.
 
 ## 10. Milestone 0 findings
@@ -314,9 +342,59 @@ Design questions to settle before building it:
 | `{date+3d:...}` `{date-1w:...}` `{date+3m:...}` `{date+1y:...}` | today shifted by days / weeks / months / years; a bare number means days. Months keep the day where possible (31 Jan + 1m → 28/29 Feb) |
 
 Anything else in braces is an error, reported when the template is saved.
-Built-in starters: **Today's date**, **Opened**, **Food** (made / use by +3
-days), **Freezer** (frozen / use by +3 months), **Container** (contents +
-date).
+Built-in starters (layouts, `labelpi/starters.py`): **Today's date**
+(framed), **Opened** (black "OPENED" badge + date), **Food** (icon, name,
+made / use by +3 days), **Freezer** (snowflake, item, frozen / use by +3
+months), **Container** (double frame, contents + date).
+
+### Layouts (`labelpi/layout.py`)
+
+A layout template is a background plus a list of elements, drawn in order
+(later ones on top):
+
+```json
+{ "tape_length_mm": 40,
+  "background": { "fill": "white", "frame": "rounded", "frame_mm": 0.4,
+                  "radius_mm": 1.5, "image": null },
+  "elements": [
+    { "type": "icon", "x": 0, "y": 0, "w": 14, "h": 100,
+      "icon": "fa-solid:snowflake", "color": "black" },
+    { "type": "text", "x": 17, "y": 0, "w": 83, "h": 55, "text": "{field:Item}",
+      "align": "left", "valign": "middle", "font": "bold", "size_mm": 0,
+      "color": "black" },
+    { "type": "line", "x1": 17, "y1": 60, "x2": 100, "y2": 60, "stroke_mm": 0.3 }
+  ] }
+```
+
+- **Units.** `x`/`y`/`w`/`h` (and a line's `x1`…`y2`) are % of the printable
+  area — the label minus its margins; on tape, the band between the end
+  margins — so one template fits every label size. x runs along the label,
+  y across it, as you read it. Thicknesses and radii are in mm.
+- **Background:** `fill` white/black; `frame` none/line/rounded/double,
+  drawn in the opposite colour at the edge of the printable area; `image`
+  `{asset, fit, dither, invert}` fills the area behind everything.
+- **Elements:** `text` (template syntax as above; shrinks to fit its box,
+  `size_mm` caps it, 0 = as big as fits; `font` bold/regular/condensed;
+  empty text draws nothing), `rect` (`fill` none/black/white, outline
+  `color` + `stroke_mm`, 0 = no outline; `radius_mm`), `ellipse`, `line`,
+  `icon` (`"<style>:<name>"`, as large as fits its box, centred, shape kept),
+  `image` (`asset` id; `fit` contain/cover/stretch; `dither`, `invert`).
+  Colours are black or white — it's a 1-bit label.
+- **Checking.** Unknown settings, wrong types, out-of-range numbers,
+  unknown icons and (when saving) missing pictures are `400`s naming the
+  element: `element 2 (text): unknown setting 'colour'`. At most 40 elements.
+- **Tape length.** Continuous tape uses the request's `length_mm`, else
+  `tape_length_mm` (default 40).
+- **Icons** (`labelpi/icons.py`): Font Awesome Free 6.7.2 (solid, regular,
+  brands), Tabler Icons 3.48 (outline, filled) and Material Design Icons
+  7.4.47, bundled as their unmodified TTF files under `labelpi/vendor/` with
+  their licences. `vendor/icons.json` (names, code points, search words) is
+  made by `tools/build_icon_index.py` — rerun it when updating a font. FA 7
+  ships only WOFF2 fonts, which Pillow on the Pi may not read, so FA stays
+  on 6.
+- **Pictures** (`labelpi/assets.py`): uploads are stored once each (named by
+  a hash of the content) as greyscale PNGs, at most 1200 px a side, in
+  `config/assets/` (gitignored; `$LABELPI_ASSETS` overrides). At most 200.
 
 ### Settings file (`labelpi/settings.py`)
 

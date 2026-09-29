@@ -74,9 +74,17 @@ bleak uses to talk to BlueZ.
 **From the system:** Python 3.11+ standard library — `socket` for Bluetooth
 Classic RFCOMM to the Brother, `tomllib` for the config — and BlueZ.
 
-**Bundled:** the [DejaVu Sans](https://dejavu-fonts.github.io/) Bold font, so
-labels render the same everywhere. Bitstream Vera licence, DejaVu changes in
-the public domain — see `labelpi/fonts/DejaVu-LICENSE`.
+**Bundled fonts** (so labels render the same everywhere; nothing is loaded
+from the internet):
+
+| Font | Used for | Licence |
+|---|---|---|
+| [DejaVu Sans](https://dejavu-fonts.github.io/) Bold, Book, Condensed Bold | label text | Bitstream Vera licence, DejaVu changes public domain — `labelpi/fonts/DejaVu-LICENSE` |
+| [Font Awesome Free](https://fontawesome.com/) 6.7.2 by Fonticons, Inc. | icons | icons CC BY 4.0, fonts SIL OFL 1.1 — `labelpi/vendor/fontawesome/LICENSE.txt` |
+| [Tabler Icons](https://tabler.io/icons) 3.48 by Paweł Kuna | icons | MIT — `labelpi/vendor/tabler/LICENSE.txt` |
+| [Material Design Icons](https://pictogrammers.com/library/mdi/) 7.4.47 by Pictogrammers | icons | Apache 2.0 — `labelpi/vendor/mdi/LICENSE.txt` |
+
+The icon fonts are the projects' unmodified TTF files.
 
 ## Credits
 
@@ -133,5 +141,5 @@ made by Claude carry a `Co-Authored-By: Claude` trailer.
 
 ## Licence
 
-MIT — see `LICENSE`. The bundled DejaVu font has its own licence
-(`labelpi/fonts/DejaVu-LICENSE`); dependencies and credits are listed above.
+MIT — see `LICENSE`. The bundled fonts have their own licences (see
+"Dependencies" above); dependencies and credits are listed above.

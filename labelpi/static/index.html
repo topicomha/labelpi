@@ -77,26 +77,80 @@
         </div>
 
         <!-- Template editor (hidden until Edit / New) -->
-        <form class="editor" id="tpl-editor" hidden>
+        <form class="editor" id="tpl-editor" novalidate hidden>
           <label class="field">
             <span>Name</span>
             <input type="text" id="tpl-name" maxlength="40" autocomplete="off">
           </label>
-          <label class="field">
-            <span>Template</span>
-            <textarea id="tpl-text" rows="4" spellcheck="false"></textarea>
-          </label>
+          <fieldset class="group">
+            <legend>Background</legend>
+            <div class="grid-3">
+              <label class="field">
+                <span>Colour</span>
+                <select id="bg-fill">
+                  <option value="white">White</option>
+                  <option value="black">Black</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Frame</span>
+                <select id="bg-frame">
+                  <option value="none">None</option>
+                  <option value="line">Line</option>
+                  <option value="rounded">Rounded</option>
+                  <option value="double">Double</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Frame (mm)</span>
+                <input type="number" id="bg-frame-mm" min="0.1" max="5" step="0.1">
+              </label>
+            </div>
+            <div class="field">
+              <span>Picture</span>
+              <div id="bg-image"></div>
+            </div>
+            <label class="field narrow">
+              <span>Length on tape (mm)</span>
+              <input type="number" id="tpl-length" min="5" max="400" step="1">
+            </label>
+          </fieldset>
+
+          <fieldset class="group">
+            <legend>Elements <small>(drawn in order - later ones on top)</small></legend>
+            <ol class="elements" id="tpl-elements"></ol>
+            <div class="add-buttons" id="tpl-add">
+              <span>Add</span>
+              <button type="button" data-add="text">Text</button>
+              <button type="button" data-add="icon">Icon</button>
+              <button type="button" data-add="rect">Box</button>
+              <button type="button" data-add="ellipse">Circle</button>
+              <button type="button" data-add="line">Line</button>
+              <button type="button" data-add="image">Picture</button>
+            </div>
+          </fieldset>
+
           <details class="help">
-            <summary>How templates work</summary>
+            <summary>How it works</summary>
             <ul>
+              <li>Positions and sizes are % of the label: left/top 0 is the top-left
+                corner, width 100 is the whole length. Thicknesses are in mm.</li>
+              <li>Text shrinks to fit its box. "Max size" (mm) stops it growing; 0 = as
+                big as fits.</li>
               <li><code>{field:Item}</code> - a box to type into when printing</li>
               <li><code>{date:%d %b %Y}</code> - today, e.g. 28 Sep 2026</li>
               <li><code>{date+3d:%d %b}</code> - in 3 days; also <code>w</code> weeks,
                 <code>m</code> months, <code>y</code> years, and <code>-</code> for the past</li>
               <li><code>{time:%H:%M}</code> - the time now</li>
               <li>Formats: <code>%d</code> day, <code>%b</code> month (Sep), <code>%m</code>
-                month (09), <code>%Y</code> year, <code>%a</code> weekday (Mon)</li>
+                month (09), <code>%Y</code> year, <code>%y</code> year (26), <code>%a</code>
+                weekday (Mon)</li>
             </ul>
+          </details>
+          <details class="help" id="tpl-json-box">
+            <summary>Edit as JSON</summary>
+            <textarea id="tpl-json" rows="12" spellcheck="false"></textarea>
+            <button type="button" class="link" id="tpl-json-apply">Apply JSON</button>
           </details>
           <p class="hint error" id="tpl-message" hidden></p>
           <div class="editor-buttons">
