@@ -26,6 +26,11 @@
           <select id="label"></select>
         </label>
       </div>
+      <!-- Tape printers only: feed each label out, or print them back to back -->
+      <div class="feed-options" id="feed-options" hidden>
+        <label class="check"><input type="checkbox" id="auto-feed"> Feed out after each label</label>
+        <p class="hint" id="feed-hint"></p>
+      </div>
     </section>
 
     <!-- What to print -->
@@ -109,7 +114,10 @@
         <img id="preview" alt="Label preview" hidden>
         <p class="hint" id="preview-hint">The preview appears here.</p>
       </div>
-      <button type="button" class="print" id="print" disabled>Print</button>
+      <div class="print-buttons">
+        <button type="button" class="print" id="print" disabled>Print</button>
+        <button type="button" class="feed" id="feed" hidden>Feed &amp; cut</button>
+      </div>
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </section>
   </main>

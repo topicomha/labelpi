@@ -3,7 +3,8 @@ Settings changed from the web page, saved in config/settings.json.
 
 printers.toml is written by hand and only read. Anything the page can change
 lives here instead: for now the templates; later label sizes, printer
-addresses and calibration. The file is gitignored - it's yours, not the repo's.
+addresses and calibration. Per-printer choices live under "printers":
+{"brother": {"auto_feed": false}}. The file is gitignored - it's yours, not the repo's.
 
 Templates: until the page saves anything, the list is the built-in starters
 plus any [[templates]] in printers.toml (same id -> the config one wins). The
@@ -41,6 +42,18 @@ class SettingsStore:
         self._seed = list(seed_templates)
         self._lock = threading.Lock()
         self._data = self._load()
+
+    # --- per-printer settings --------------------------------------------------
+    def auto_feed(self, printer_id: str) -> bool:
+        """Feed each label out to the cutter when done (default), or chain them."""
+        with self._lock:
+            return bool(self._data.get("printers", {}).get(printer_id, {}).get("auto_feed", True))
+
+    def set_auto_feed(self, printer_id: str, on: bool) -> None:
+        with self._lock:
+            printers = self._data.setdefault("printers", {})
+            printers.setdefault(printer_id, {})["auto_feed"] = bool(on)
+            self._write()
 
     # --- templates -------------------------------------------------------------
     def templates(self) -> list[Template]:
@@ -101,6 +114,8 @@ class SettingsStore:
                 raise ValueError("top level is not an object")
             if "templates" in data:
                 data["templates"] = _valid_templates(data["templates"])
+            if not isinstance(data.get("printers", {}), dict):
+                raise ValueError('"printers" is not an object')
             return data
         except (ValueError, KeyError, TypeError) as exc:
             # Don't lose the file and don't refuse to start: keep a copy aside.

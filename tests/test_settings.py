@@ -123,3 +123,21 @@ def test_concurrent_adds_are_all_kept(store):
 def test_real_starters_seed_cleanly(path):
     store = SettingsStore(path, list(STARTER_TEMPLATES))
     assert [t.id for t in store.templates()] == ["today", "opened", "food", "freezer", "container"]
+
+
+def test_auto_feed_defaults_on_and_is_saved(tmp_path):
+    path = tmp_path / "settings.json"
+    store = SettingsStore(path, [])
+    assert store.auto_feed("tape") is True
+    store.set_auto_feed("tape", False)
+    assert store.auto_feed("tape") is False and store.auto_feed("die") is True
+    assert json.loads(path.read_text())["printers"] == {"tape": {"auto_feed": False}}
+    assert SettingsStore(path, []).auto_feed("tape") is False  # survives a restart
+
+
+def test_broken_printers_section_is_moved_aside(tmp_path):
+    path = tmp_path / "settings.json"
+    path.write_text('{"printers": []}')
+    store = SettingsStore(path, [])
+    assert store.auto_feed("tape") is True
+    assert list(tmp_path.glob("settings.json.broken-*"))

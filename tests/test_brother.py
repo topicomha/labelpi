@@ -257,6 +257,39 @@ def test_printer_off_or_out_of_range(brother_config, tape_label):
         printer.print(label_image(tape_label), tape_label)
 
 
+def test_busy_link_is_retried(brother_config, tape_label, monkeypatch):
+    """Right after a job the old link may still be closing: EBUSY, then fine."""
+    import labelpi.printers.brother as brother
+
+    monkeypatch.setattr(brother, "BUSY_RETRY_EVERY_S", 0)
+    fake, attempts = FakePrinter(), []
+
+    def busy_twice(address, channel, timeout):
+        attempts.append(1)
+        if len(attempts) <= 2:
+            raise OSError(errno.EBUSY, "Device or resource busy")
+        return fake
+
+    printer = BrotherPrinter(brother_config, connect=busy_twice)
+    printer.print(label_image(tape_label), tape_label)
+    assert len(attempts) == 3 and len(fake.jobs) == 1
+
+
+def test_busy_for_too_long_gives_up(brother_config, tape_label, monkeypatch):
+    import labelpi.printers.brother as brother
+
+    monkeypatch.setattr(brother, "BUSY_RETRY_S", 0.05)
+    monkeypatch.setattr(brother, "BUSY_RETRY_EVERY_S", 0.01)
+
+    def always_busy(address, channel, timeout):
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    with pytest.raises(PrinterUnavailable, match="EBUSY"):
+        BrotherPrinter(brother_config, connect=always_busy).print(
+            label_image(tape_label), tape_label
+        )
+
+
 def test_connection_drops_mid_job(brother_config, tape_label):
     class Dropping(FakePrinter):
         def sendall(self, data):
@@ -273,3 +306,43 @@ def test_connection_drops_mid_job(brother_config, tape_label):
 def test_status_method(brother_config):
     info = make_printer(brother_config, FakePrinter()).status()
     assert info == {"tape_width_mm": 12, "errors": "", "ready": True}
+
+
+# --- chain printing and feed ---------------------------------------------------------
+def advanced_mode(job: bytes) -> int:
+    """The ESC i K byte: 0x08 = feed out after the label, 0x00 = chain."""
+    return job[job.index(b"\x1biK") + 3]
+
+
+def test_chain_turns_off_the_feed_out(tape_label):
+    image = label_image(tape_label)
+    status = Status.parse(status_bytes())
+    assert advanced_mode(encode_job(image, status)) == 0x08
+    assert advanced_mode(encode_job(image, status, chain=True)) == 0x00
+
+
+def test_chained_print_and_feed(brother_config, tape_label):
+    fake = FakePrinter()
+    printer = make_printer(brother_config, fake)
+    assert printer.can_chain
+    printer.print(
+        printer.prepare(label_image(tape_label), tape_label, chain=True), tape_label, True
+    )
+    printer.feed()
+    label_job, feed_job = fake.jobs
+    assert advanced_mode(label_job) == 0x00
+    # The feed is a one-line blank job that does feed out.
+    assert advanced_mode(feed_job) == 0x08
+    info = feed_job.index(b"\x1biz") + 3
+    assert struct.unpack("<4BI2B", feed_job[info : info + 10])[4] == 1
+    assert feed_job.count(b"G") == 0  # nothing black to print
+
+
+def test_chained_prepare_adds_cut_lines(brother_config, tape_label):
+    printer = make_printer(brother_config, FakePrinter())
+    image = label_image(tape_label)
+    plain = printer.prepare(image, tape_label)
+    marked = printer.prepare(image, tape_label, chain=True)
+    assert marked.size == plain.size
+    assert plain.getpixel((0, 0)) != 0 and marked.getpixel((0, 0)) == 0
+    assert marked.getpixel((marked.width - 1, 0)) == 0
