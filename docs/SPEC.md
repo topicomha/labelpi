@@ -220,7 +220,7 @@ it from its device list).
 3. Web UI — **done**.
 4. Real Brother backend — **done** (own encoder; no vendored code, so no licence issue).
 5. Real Phomemo backend (in-house ESC/POS encoder + BLE via `bleak`) — **done**;
-   job acknowledged by a real D30, printed label still to be checked (STATUS.md).
+   real print verified with the calibration ruler (2026-09-28).
 6. Deploy script, systemd unit, Pi setup doc verified end to end.
 7. Printer setup from the UI: discovery, pairing, calibration (§11).
 8. Templates with fill-in fields and date maths, editable on the page (§12)
