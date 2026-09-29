@@ -112,7 +112,7 @@
             </div>
             <label class="field narrow">
               <span>Length on tape (mm)</span>
-              <input type="number" id="tpl-length" min="5" max="400" step="1">
+              <input type="number" id="tpl-length" min="5" max="400" step="1" placeholder="auto">
             </label>
           </fieldset>
 
@@ -135,6 +135,8 @@
             <ul>
               <li>Positions and sizes are % of the label: left/top 0 is the top-left
                 corner, width 100 is the whole length. Thicknesses are in mm.</li>
+              <li>On tape, leave "Length on tape" empty and the label grows to fit its
+                text (at least 25 mm); icons and pictures scale with it.</li>
               <li>Text shrinks to fit its box. "Max size" (mm) stops it growing; 0 = as
                 big as fits.</li>
               <li><code>{field:Item}</code> - a box to type into when printing</li>

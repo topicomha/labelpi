@@ -156,8 +156,8 @@ Fields: `printer`, `label`, `file`, optional `dither`, `invert`, `length_mm`.
 Instead of `"template": id`, `"layout": {...}` or `"text": "..."` prints/
 previews an unsaved template (the page's editor uses this for its live
 preview). Missing fields print as blanks. `length_mm` sets the length on
-continuous tape (default: the layout's `tape_length_mm`; text templates are as
-long as their text). `"align"` applies to text templates only.
+continuous tape (default: the layout's `tape_length_mm`, else auto; text
+templates are as long as their text). `"align"` applies to text templates only.
 
 ### Preview
 Add `?preview=1` to any `print/*` endpoint → `200 image/png` of exactly what
@@ -353,7 +353,7 @@ A layout template is a background plus a list of elements, drawn in order
 (later ones on top):
 
 ```json
-{ "tape_length_mm": 40,
+{ "tape_length_mm": null,
   "background": { "fill": "white", "frame": "rounded", "frame_mm": 0.4,
                   "radius_mm": 1.5, "image": null },
   "elements": [
@@ -384,7 +384,12 @@ A layout template is a background plus a list of elements, drawn in order
   unknown icons and (when saving) missing pictures are `400`s naming the
   element: `element 2 (text): unknown setting 'colour'`. At most 40 elements.
 - **Tape length.** Continuous tape uses the request's `length_mm`, else
-  `tape_length_mm` (default 40).
+  `tape_length_mm`, else **auto** (the default, `null`): each text element at
+  the largest size its box's height allows (capped by `size_mm`), the label
+  just long enough for it to fit its box's share of the length (w %); icons,
+  pictures and shapes don't push the length, they scale into their boxes
+  (their width is a % of that same length). At least 25 mm. Die-cut labels
+  always have their fixed size.
 - **Icons** (`labelpi/icons.py`): Font Awesome Free 6.7.2 (solid, regular,
   brands), Tabler Icons 3.48 (outline, filled) and Material Design Icons
   7.4.47, bundled as their unmodified TTF files under `labelpi/vendor/` with

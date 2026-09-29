@@ -32,18 +32,20 @@ STARTER_TEMPLATES = (
         "Opened",
         {
             "elements": [
-                {"type": "rect", "w": 34, "fill": "black", "radius_mm": 1},
+                # Badge and date text sized so that on tape (auto length)
+                # both need about the same length: no gap between them.
+                {"type": "rect", "w": 40, "fill": "black", "radius_mm": 1},
                 {
                     "type": "text",
                     "x": 2,
-                    "y": 15,
-                    "w": 30,
-                    "h": 70,
+                    "y": 25,
+                    "w": 36,
+                    "h": 50,
                     "text": "OPENED",
                     "font": "condensed",
                     "color": "white",
                 },
-                {"type": "text", "x": 37, "w": 63, "text": "{date:%d %b}\n{date:%Y}"},
+                {"type": "text", "x": 43, "y": 20, "w": 57, "h": 60, "text": "{date:%d %b %Y}"},
             ],
         },
     ),
