@@ -85,6 +85,44 @@ class SettingsStore:
             self._save_templates([*templates, template])
             return template
 
+    def import_templates(
+        self, items: list[tuple[str, Any, Any]]
+    ) -> tuple[list[Template], list[str]]:
+        """
+        Add several templates at once, given as (name, text, layout) - all or
+        nothing: if any is invalid, TemplateError names it and none are added.
+        Returns (added, skipped names). A template identical to one that's
+        already here (same name and design) is skipped, so re-importing a
+        backup doesn't double everything; same name with a different design
+        is added with a new id.
+        """
+        checked = []
+        for n, (name, text, layout) in enumerate(items, 1):
+            try:
+                checked.append((_clean_name(name), *self._check_body(text, layout)))
+            except TemplateError as exc:
+                raise TemplateError(f"template {n} ({name!r}): {exc}") from None
+        with self._lock:
+            templates = self._templates()
+            if len(templates) + len(checked) > MAX_TEMPLATES:
+                raise TemplateError(
+                    f"that would make {len(templates) + len(checked)} templates; "
+                    f"the limit is {MAX_TEMPLATES}"
+                )
+            existing = {(t.name, t.text, _canonical(t.layout)) for t in templates}
+            added, skipped = [], []
+            for name, text, layout in checked:
+                key = (name, text, _canonical(layout))
+                if key in existing:
+                    skipped.append(name)
+                    continue
+                existing.add(key)
+                template_id = _unique_id(name, {t.id for t in [*templates, *added]})
+                added.append(Template(template_id, name, text, layout))
+            if added:
+                self._save_templates([*templates, *added])
+            return added, skipped
+
     def update_template(
         self, template_id: str, name: str, text: Any = None, layout: Any = None
     ) -> Template | None:
@@ -166,6 +204,11 @@ class SettingsStore:
             f.flush()
             os.fsync(f.fileno())  # make sure it's on the SD card before the rename
         os.replace(tmp, self.path)
+
+
+def _canonical(layout: dict[str, Any] | None) -> str:
+    """A layout as a comparable string (key order doesn't matter)."""
+    return json.dumps(layout, sort_keys=True)
 
 
 def _template_dict(template: Template) -> dict[str, Any]:

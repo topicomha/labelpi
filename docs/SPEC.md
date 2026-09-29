@@ -98,6 +98,20 @@ as large as fits), never both. Layouts come back with every default filled
 in. Bad template or name → `400`; unknown id → `404`. New ids come from the
 name (`"Freezer bag"` → `freezer-bag`, `freezer-bag-2` if taken).
 
+### Export / import
+```
+GET  /api/templates/export[?id=freezer&id=food]  -> attachment labelpi-templates-<date>.json
+POST /api/templates/import   multipart "file", or the file's JSON as the body
+                             -> 201 { "imported": [templates], "skipped": ["Freezer", ...] }
+```
+The file: `{"format": "labelpi-templates", "version": 1, "exported": "...",
+"templates": [{"name", "layout" | "text"}], "pictures": {"<id>": "<base64 PNG>"}}`
+— pictures a layout uses travel inside it, and get re-stored (and the
+layouts' ids rewritten) on import. Import adds templates next to the
+existing ones and never replaces any: a taken name gets a new id, and a
+template identical to one already here (same name and design) is skipped.
+All or nothing: an invalid template → `400` naming it, nothing added.
+
 ### Icons and pictures (for layouts)
 ```
 GET    /api/icons?q=snow&style=fa-solid&limit=60
@@ -198,6 +212,8 @@ One page, responsive from ~360 px phone width up to desktop.
   - Text: textarea, align buttons.
   - Image: file picker (plus drag-drop on desktop), dither/invert toggles.
   - Templates: one button per template; a text box for each `{field:...}`;
+    "Duplicate" copies the selected one into the editor as "… copy";
+    "Import…" / "Export all" load and save template files (see §5);
     "Edit this template" / "+ New template" open the layout editor: name;
     background (colour, frame, frame thickness, picture, length on tape);
     the element list (one collapsible card per element with its settings,

@@ -142,3 +142,29 @@ def test_broken_printers_section_is_moved_aside(tmp_path):
     store = SettingsStore(path, [])
     assert store.auto_feed("tape") is True
     assert list(tmp_path.glob("settings.json.broken-*"))
+
+
+def test_import_templates_is_all_or_nothing(store):
+    added, skipped = store.import_templates([("Jar", "{field:Contents}", None), ("Box", "x", None)])
+    assert [t.id for t in added] == ["jar", "box-2"]  # "box" is taken by the seed
+    assert skipped == []
+    before = store.templates()
+    with pytest.raises(TemplateError, match=r"template 2 \('Bad'\)"):
+        store.import_templates([("Ok", "fine", None), ("Bad", "{nope}", None)])
+    assert store.templates() == before
+
+
+def test_import_templates_respects_the_limit(store, monkeypatch):
+    import labelpi.settings as settings
+
+    monkeypatch.setattr(settings, "MAX_TEMPLATES", 3)
+    with pytest.raises(TemplateError, match="the limit is 3"):
+        store.import_templates([("A", "a", None), ("B", "b", None)])
+
+
+def test_import_skips_identical_templates(store):
+    same, skipped = store.import_templates([("Box", "{field:What}", None)])  # the seed's "Box"
+    assert same == [] and skipped == ["Box"]
+    again, _ = store.import_templates([("Jar", "a", None)])
+    twice, skipped = store.import_templates([("Jar", "a", None), ("Jar", "b", None)])
+    assert skipped == ["Jar"] and [t.text for t in twice] == ["b"]

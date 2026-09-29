@@ -72,8 +72,17 @@
         <div class="template-fields" id="template-fields"></div>
 
         <div class="template-actions" id="template-actions">
-          <button type="button" class="link" id="tpl-edit">Edit this template</button>
-          <button type="button" class="link" id="tpl-new">+ New template</button>
+          <div class="action-row">
+            <button type="button" class="link" id="tpl-edit">Edit this template</button>
+            <button type="button" class="link" id="tpl-duplicate">Duplicate</button>
+            <button type="button" class="link" id="tpl-new">+ New template</button>
+          </div>
+          <div class="action-row">
+            <label class="link file-link">Import&hellip;
+              <input type="file" id="tpl-import" accept="application/json,.json">
+            </label>
+            <a class="link" id="tpl-export" href="/api/templates/export" download>Export all</a>
+          </div>
         </div>
 
         <!-- Template editor (hidden until Edit / New) -->
