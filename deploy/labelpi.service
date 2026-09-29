@@ -1,0 +1,20 @@
+# labelpi web service. install.sh copies this to /etc/systemd/system/,
+# replacing @USER@ and @DIR@ with the real user and checkout folder.
+[Unit]
+Description=labelpi label printing service
+Wants=network-online.target bluetooth.target
+After=network-online.target bluetooth.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@DIR@
+ExecStart=@DIR@/.venv/bin/python run.py
+# Crashed or failed to start? Try again after a short pause, forever.
+Restart=always
+RestartSec=5
+# Log lines straight to the journal (journalctl -u labelpi).
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -32,3 +32,6 @@ labelpi-docs.zip
 
 # Images uploaded from the page for template layouts.
 config/assets/
+
+# Auto-deploy remembers a commit that failed its smoke test here.
+.deploy-failed-commit

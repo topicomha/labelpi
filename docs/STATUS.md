@@ -20,7 +20,7 @@ _Last updated: 2026-09-28._
 | 5 | Phomemo D30 backend (BLE) | done — **real print verified** (calibration ruler, 2026-09-28) |
 | 9 | Label sizes managed from the page | next |
 | 7 | Printer setup from the page: discovery, pairing, calibration | after 9 |
-| 6 | Deploy to the Pi Zero W: systemd, auto-deploy, Pi setup verified | last |
+| 6 | Deploy to the Pi Zero W: systemd, auto-deploy, Pi setup verified | in progress — `deploy/` written and sandbox-tested; **not yet run on the real Zero** |
 
 Agreed build order: 8 → 9 → 5 → 7 → 6. Milestone 5 was pulled forward at the
 owner's request; 10 (layouts) was added and done before 9, also at the
@@ -112,13 +112,16 @@ calibration flow (print a ruler, user reads it off, store `offset_mm` /
 `print_height_px`). Decide explicitly whether LAN-without-login is OK for
 pairing devices.
 
-## Last: Milestone 6 — the Pi Zero W
+## Now: Milestone 6 — the Pi Zero W
 
-`deploy/labelpi.service`, `deploy/deploy.sh` (cron: fetch `main` from the
-public GitHub repo over HTTPS — no credentials — pull, install requirements
-if changed, smoke test, restart), `deploy/labelpi.sudoers`. Verify on the
-real Zero: Python ≥ 3.11, **bleak / dbus-fast install from piwheels on
-ARMv6 without compiling**, Pillow wheels, memory, timings.
+`deploy/install.sh` (one-time setup), `deploy/deploy.sh` run every minute by
+`labelpi-deploy.timer` (fetch `main` from the public repo, fast-forward, pip
+install only if requirements changed, smoke test, restart; roll back and skip
+a bad commit), `deploy/labelpi.service`, `deploy/labelpi.sudoers`. All
+scenarios were checked in a sandbox (fake remote, fake sudo). Still to verify
+on the real Zero: Python ≥ 3.11, **bleak / dbus-fast install from piwheels on
+ARMv6 without compiling**, Pillow wheels, memory, timings, pairing the
+Brother from the Zero. Steps: `docs/PI_SETUP.md`.
 
 ## Where things are
 

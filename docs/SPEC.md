@@ -259,18 +259,28 @@ it from its device list).
   stays in gitignored files on the Pi.
 - The Pi deploys whatever is on `main`, so `main` must always be runnable:
   do work on branches and merge when tests pass.
-- `deploy/deploy.sh`, run by cron every minute as the service user:
+- **Install once:** `deploy/install.sh`, run from the clone as the service
+  user. It installs packages, creates the venv, sets up the config, the
+  sudoers rule and the systemd units. It's idempotent; steps are in
+  `docs/PI_SETUP.md`.
+- **Auto-deploy:** `deploy/deploy.sh`, run every minute by
+  `labelpi-deploy.timer`, a systemd timer rather than cron: same job, logs to
+  the journal, never overlaps.
   1. Take a lock (`flock`) so runs never overlap.
-  2. `git fetch --quiet`; if `HEAD == @{u}`, exit.
-  3. Remember the current commit, then `git pull --ff-only`.
+  2. `git fetch origin main`; if `HEAD` is already there, exit. Also exit if
+     that commit already failed (`.deploy-failed-commit`, gitignored).
+  3. `git merge --ff-only origin/main`; local edits stop it with a message.
   4. If `requirements.txt` changed, `.venv/bin/pip install -r requirements.txt`
-     (slow on a Zero — only when needed).
-  5. Smoke check: `.venv/bin/python -c "import labelpi.app"`. On failure,
-     `git reset --hard <previous commit>` and log an error.
-  6. `sudo systemctl restart labelpi` (allowed by `deploy/labelpi.sudoers`).
-  7. Log each step with `logger -t labelpi-deploy` (visible in `journalctl`).
-- `deploy/labelpi.service`: runs `run.py` from the venv as a non-root user,
-  `Restart=on-failure`, `After=bluetooth.target network-online.target`.
+     (slow on a Zero, so only when needed).
+  5. Smoke check: `create_app()` must import and load the config. On failure
+     (or a failed pip install) `git reset --hard <previous commit>` and
+     remember the bad commit.
+  6. `sudo -n systemctl restart labelpi` (allowed by `deploy/labelpi.sudoers`,
+     nothing else).
+  7. Log each step with `logger -t labelpi-deploy` (`journalctl`).
+- `deploy/labelpi.service`: runs `run.py` from the venv as the non-root user,
+  `Restart=always`, after network and Bluetooth. `@USER@` / `@DIR@` in the
+  unit files are filled in by `install.sh`.
 
 ## 9. Milestones
 
@@ -281,7 +291,8 @@ it from its device list).
 4. Real Brother backend — **done** (own encoder; no vendored code, so no licence issue).
 5. Real Phomemo backend (in-house ESC/POS encoder + BLE via `bleak`) — **done**;
    real print verified with the calibration ruler (2026-09-28).
-6. Deploy script, systemd unit, Pi setup doc verified end to end.
+6. Deploy script, systemd unit, Pi setup doc verified end to end — scripts
+   written and tested in a sandbox; **not yet run on the real Zero**.
 7. Printer setup from the UI: discovery, pairing, calibration (§11).
 8. Templates with fill-in fields and date maths, editable on the page (§12)
    — **done**.

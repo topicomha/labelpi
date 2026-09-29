@@ -1,0 +1,12 @@
+# One auto-deploy run: pull main from GitHub if it changed, then restart
+# labelpi. Started every minute by labelpi-deploy.timer.
+[Unit]
+Description=labelpi auto-deploy from GitHub main
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@DIR@
+ExecStart=@DIR@/deploy/deploy.sh
