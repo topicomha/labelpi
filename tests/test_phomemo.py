@@ -64,6 +64,7 @@ def fast(monkeypatch):
 
     monkeypatch.setattr(phomemo, "PRINT_SETTLE_S", 0.05)
     monkeypatch.setattr(phomemo, "QUERY_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(phomemo, "SETTLE_AFTER_CONNECT_S", 0)
 
 
 @pytest.fixture
@@ -84,21 +85,21 @@ def label_image(die_label):
 
 # --- encoding --------------------------------------------------------------------
 def test_head_orientation_is_96_wide():
-    rotated = to_head_orientation(Image.new("1", (320, 96), 1))
-    assert rotated.size == (96, 320)
+    rotated = to_head_orientation(Image.new("1", (400, 96), 1))
+    assert rotated.size == (96, 400)
 
 
-def test_rotation_direction_matches_the_spike():
-    """The spike's working setting was 'rotate 270 clockwise': the label's
+def test_rotation_direction_matches_the_hardware_test():
+    """The Milestone 0 hardware test's working setting was 'rotate 270 clockwise': the label's
     top-left corner ends up bottom-left."""
-    image = Image.new("1", (320, 96), 1)
+    image = Image.new("1", (400, 96), 1)
     ImageDraw.Draw(image).rectangle([0, 0, 9, 9], fill=0)  # top-left block
     rotated = to_head_orientation(image)
-    assert rotated.getpixel((0, 319)) == 0 and rotated.getpixel((95, 0)) != 0
+    assert rotated.getpixel((0, 399)) == 0 and rotated.getpixel((95, 0)) != 0
 
 
 def test_encode_job_bytes():
-    image = Image.new("1", (96, 320), 1)
+    image = Image.new("1", (96, 400), 1)
     image.putpixel((0, 0), 0)  # one black dot: first bit of the first row
     job = encode_job(image)
     header = (
@@ -106,12 +107,12 @@ def test_encode_job_bytes():
         + b"\x1b@"
         + b"\x1dv0\x00"
         + (12).to_bytes(2, "little")
-        + (320).to_bytes(2, "little")
+        + (400).to_bytes(2, "little")
     )
     assert job.startswith(header)
     assert job.endswith(END_OF_JOB)
     raster = job[len(header) : -len(END_OF_JOB)]
-    assert len(raster) == 12 * 320
+    assert len(raster) == 12 * 400
     assert raster[0] == 0x80 and set(raster[1:]) == {0}  # 1 = black, MSB = leftmost
 
 
@@ -130,17 +131,17 @@ def test_answer_byte_ignores_acks():
 def test_prepare_keeps_size_and_orientation(d30_config, die_label):
     image = label_image(die_label)
     prepared = make_printer(d30_config, FakeD30()).prepare(image, die_label)
-    assert prepared.size == image.size == (320, 96)
+    assert prepared.size == image.size == (400, 96)
 
 
 def test_offset_moves_the_print_along_the_label(d30_config, die_label):
     from dataclasses import replace
 
-    image = Image.new("1", (320, 96), 1)
+    image = Image.new("1", (400, 96), 1)
     image.putpixel((0, 50), 0)
     printer = make_printer(d30_config, FakeD30())
     later = printer.prepare(image, replace(die_label, offset_mm=2))
-    assert later.size == (320, 96) and later.getpixel((16, 50)) == 0  # 2 mm = 16 px
+    assert later.size == (400, 96) and later.getpixel((16, 50)) == 0  # 2 mm = 16 px
     earlier = printer.prepare(image, replace(die_label, offset_mm=-1))
     assert earlier.getpixel((0, 50)) != 0  # white: moved off the start
 
@@ -180,11 +181,13 @@ def test_cover_open(d30_config, die_label):
         make_printer(d30_config, FakeD30(cover=0x99)).print(label_image(die_label), die_label)
 
 
-def test_silent_status_still_prints(d30_config, die_label, caplog):
+def test_silent_printer_is_not_sent_the_job(d30_config, die_label):
+    """No answer at all = probably stuck mid-image: the job would print garbled."""
     fake = FakeD30(answers=False)
-    make_printer(d30_config, fake).print(label_image(die_label), die_label)
-    assert fake.job.endswith(END_OF_JOB)
-    assert "didn't answer the status check" in caplog.text
+    with pytest.raises(PrinterError, match="switch it off and on"):
+        make_printer(d30_config, fake).print(label_image(die_label), die_label)
+    assert not fake.job.endswith(END_OF_JOB)
+    assert fake.closed
 
 
 def test_not_reachable(d30_config, die_label):
@@ -206,9 +209,46 @@ def test_wrong_device(d30_config, die_label):
 
 def test_connection_drops_mid_job(d30_config, die_label):
     fake = FakeD30(fail_on_write=5)
-    with pytest.raises(PrinterUnavailable, match="connection lost"):
+    with pytest.raises(PrinterUnavailable, match=r"connection lost after \d+ of \d+ bytes"):
         make_printer(d30_config, fake).print(label_image(die_label), die_label)
     assert fake.closed
+
+
+def test_drop_before_the_image_is_retried_once(d30_config, die_label):
+    """Nothing of the image was sent, so a fresh connection can try again."""
+    first = FakeD30(fail_on_write=2)  # fails right after the two status queries
+    second = FakeD30()
+    sessions = [first, second]
+
+    async def open_session(address, timeout):
+        return sessions.pop(0)
+
+    printer = PhomemoPrinter(d30_config, open_session=open_session)
+    printer.print(label_image(die_label), die_label)
+    assert first.job == b"" and first.closed
+    assert second.job.endswith(END_OF_JOB) and second.closed
+
+
+def test_drop_before_the_image_twice_gives_up(d30_config, die_label):
+    fake = FakeD30(fail_on_write=2)  # the same fake fails both attempts
+    with pytest.raises(PrinterUnavailable, match="connection lost") as caught:
+        make_printer(d30_config, fake).print(label_image(die_label), die_label)
+    assert "off and on" not in str(caught.value)  # nothing half-sent: no power cycle
+
+
+def test_drop_mid_image_is_not_retried(d30_config, die_label):
+    """Retrying would print into the half-sent image."""
+    opened = []
+
+    async def open_session(address, timeout):
+        opened.append(1)
+        return FakeD30(fail_on_write=5)
+
+    with pytest.raises(PrinterUnavailable, match="off and on"):
+        PhomemoPrinter(d30_config, open_session=open_session).print(
+            label_image(die_label), die_label
+        )
+    assert len(opened) == 1
 
 
 def test_status(d30_config):

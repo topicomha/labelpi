@@ -119,12 +119,38 @@ fonts so the page can show the icons it will print.
   "align": "center", "font_size": null, "length_mm": null }
 ```
 
+### Chain printing and feed (tape printers)
+```
+GET  /api/printers                 -> [{ ..., "can_chain": true, "auto_feed": true }]
+PUT  /api/printers/<id>/settings   { "auto_feed": false }  -> printer (saved in settings.json)
+POST /api/printers/<id>/feed       -> { "status": "fed", "printer": "brother", "ms": 2400 }
+```
+The Brother's cutter is ~24 mm past its print head, so after each label it
+normally feeds the tape out so the label can be cut, which leaves ~24 mm of
+blank tape before the next one. With `auto_feed: false` labels print back to
+back instead (~2–3 mm apart), each with a dashed cut line at both ends (also
+in the preview), and `POST .../feed` pushes the finished strip out to the
+cutter (a one-line blank job). Every print endpoint also takes `"auto_feed"`
+(JSON) or an `auto_feed` form field to override the saved setting for one
+label; print responses say `"fed": true/false`. Printers that can't chain
+(the D30's die-cut labels) ignore it; setting it or feeding them is a `400`.
+
+### `POST /api/print/ruler`
+```json
+{ "printer": "d30", "label": "12x50", "length_mm": null }
+```
+Prints a calibration ruler along the whole label: a solid bar at 0 (the first
+column of the image), a tick every mm, numbers every 10 mm, lines along both
+long edges. Label margins are ignored; the printer's `prepare()` (and so the
+D30's `offset_mm`) is applied. Compare it with the physical label and adjust
+`length_mm` / `offset_mm`. `length_mm` is for tape only (default 50).
+
 ### `POST /api/print/image` — `multipart/form-data`
 Fields: `printer`, `label`, `file`, optional `dither`, `invert`, `length_mm`.
 
 ### `POST /api/print/template`
 ```json
-{ "printer": "d30", "label": "12x40", "template": "freezer",
+{ "printer": "d30", "label": "12x50", "template": "freezer",
   "fields": { "Item": "Chicken soup" }, "length_mm": null }
 ```
 Instead of `"template": id`, `"layout": {...}` or `"text": "..."` prints/
@@ -160,7 +186,7 @@ curl -X POST http://labelpi.lan:8080/api/print/text \
   -d '{"printer":"brother","label":"tze-12","text":"Server rack 2"}'
 
 curl -X POST http://labelpi.lan:8080/api/print/image \
-  -F printer=d30 -F label=12x40 -F file=@logo.png
+  -F printer=d30 -F label=12x50 -F file=@logo.png
 ```
 
 ## 6. Web UI
@@ -181,6 +207,8 @@ One page, responsive from ~360 px phone width up to desktop.
     Delete. Every change previews live. Old text templates open as one text
     element and are saved as layouts. No drag-and-drop: positions are typed.
     Picking a template selects and previews it; Print prints it.
+- Tape printers: a "Feed out after each label" checkbox (saved on the Pi)
+  and, when it's off, a **Feed & cut** button next to Print.
 - Live preview image, refreshed (debounced ~400 ms) from `?preview=1`.
 - **Print** button, disabled while a request is in flight.
 - Plain-English status line: "Printed", "Brother is busy — try again in a
@@ -236,7 +264,7 @@ it from its device list).
 3. Web UI — **done**.
 4. Real Brother backend — **done** (own encoder; no vendored code, so no licence issue).
 5. Real Phomemo backend (in-house ESC/POS encoder + BLE via `bleak`) — **done**;
-   job acknowledged by a real D30, printed label still to be checked (STATUS.md).
+   real print verified with the calibration ruler (2026-09-28).
 6. Deploy script, systemd unit, Pi setup doc verified end to end.
 7. Printer setup from the UI: discovery, pairing, calibration (§11).
 8. Templates with fill-in fields and date maths, editable on the page (§12)
@@ -252,7 +280,9 @@ and PR, merged when tests pass.
 
 Run on a lab Pi (Raspberry Pi OS trixie, Python 3.13, BlueZ 5.82), not the
 Zero W — protocol results carry over; timings and ARMv6 installs must be
-re-checked on the Zero. Scripts are in `spike/`.
+re-checked on the Zero. The spike scripts were deleted once the real
+backends covered them (see git history for `spike/`); `POST
+/api/print/ruler` replaced their `--calibrate` rulers.
 
 | | Brother PT-P300BT | Phomemo D30 |
 |---|---|---|
@@ -266,10 +296,13 @@ re-checked on the Zero. Scripts are in `spike/`.
 
 **Open items**
 - ~~Licence~~ — resolved: Milestone 4 is our own encoder; nothing of
-  Ircama's is vendored (the spike still imports it from a clone for reference).
-- **D30 label geometry.** A 40 mm image started ~12 mm into the label and ran
-  off its far end. The roll may be 12 × 50 mm rather than 12 × 40, so the
-  real size is unconfirmed. Needs calibration (§11).
+  Ircama's is vendored.
+- ~~D30 label geometry~~ — resolved 2026-09-28: the labels are 12 × 50 mm
+  (ruler print, measured gap to gap). A 50 mm image lands on the label with
+  its 0 ~0.5 mm before the leading edge and 50 at the far end; the scale is
+  true (203 dpi). The earlier "starts ~12 mm in" was a 40 mm image on a
+  50 mm label: the printer aligns the image with the label's end.
+  `length_mm = 50`, `offset_mm = 0`.
 - **Brother 9 mm / 6 mm tape**: 48 / 32 px are Ircama's numbers, unverified.
 - **D30 over Classic**: a single burst didn't print; paced chunks were sent
   once, but nobody checked whether that label printed. Only worth revisiting
@@ -284,9 +317,11 @@ Goal: set up and tune printers from the web page instead of SSH.
 - **Discover**: scan for nearby printers and list likely matches (names
   `PT-P300BT…`, `D30`).
 - **Pair**: pair + trust the Brother; the D30 only needs its address stored.
-- **Calibrate**: print a ruler (see `spike/spike_phomemo.py --calibrate`,
-  `spike/spike_brother.py --calibrate`), the user reads off where it lands,
-  and the UI stores the offset / band height for that label.
+- **Calibrate**: print a ruler (`POST /api/print/ruler`), the user reads off
+  where it lands, and the UI stores the offset for that label. (The Brother's
+  band height, 64 px on 12 mm tape, was measured once with a 128-row
+  staircase from the Milestone 0 spike; bring that back only if another tape
+  width is added.)
 
 Design questions to settle before building it:
 - ~~Where do settings live?~~ — decided: `config/settings.json`, see §12.

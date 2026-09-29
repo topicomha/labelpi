@@ -34,7 +34,7 @@ from typing import Protocol
 from PIL import Image, ImageOps
 
 from labelpi.config import LabelConfig, PrinterConfig
-from labelpi.printers.base import Printer, PrinterError, PrinterUnavailable
+from labelpi.printers.base import Printer, PrinterError, PrinterUnavailable, add_cut_lines
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +42,8 @@ RFCOMM_CHANNEL = 1
 CONNECT_TIMEOUT_S = 15
 READ_TIMEOUT_S = 5
 PRINT_TIMEOUT_S = 60  # a 40 cm label takes well under this
+BUSY_RETRY_S = 5  # reconnecting right after a job: Linux may still be closing the old link
+BUSY_RETRY_EVERY_S = 0.25
 RASTER_PX = 128
 LINE_BYTES = RASTER_PX // 8
 STATUS_BYTES = 32
@@ -170,8 +172,13 @@ def raster_lines(image: Image.Image) -> list[bytes]:
     return [bits[i : i + LINE_BYTES] for i in range(0, len(bits), LINE_BYTES)]
 
 
-def encode_job(image: Image.Image, status: Status) -> bytes:
-    """Everything sent after the status check, ending with 'print and feed'."""
+def encode_job(image: Image.Image, status: Status, chain: bool = False) -> bytes:
+    """
+    Everything sent after the status check, ending with 'print and feed'.
+    chain=True turns chain printing on: the printer then does NOT feed the
+    label out past the cutter, so the next one follows straight on (checked
+    on a PT-P300BT: ~2-3 mm between labels instead of ~24 mm).
+    """
     lines = raster_lines(image)
     job = bytearray(INVALIDATE + INITIALIZE + RASTER_MODE)
     job += b"\x1biz" + struct.pack(
@@ -184,7 +191,7 @@ def encode_job(image: Image.Image, status: Status) -> bytes:
         0,  # "follow-up page": no
         0,  # reserved
     )
-    job += b"\x1biK" + bytes([NO_CHAINING])  # advanced mode
+    job += b"\x1biK" + bytes([0 if chain else NO_CHAINING])  # advanced mode
     job += b"\x1biM" + bytes([0])  # various mode: no auto cut, no mirror
     job += b"\x1bid" + struct.pack("<H", 0)  # end margin (feed) in dots
     job += COMPRESSION_TIFF
@@ -260,21 +267,43 @@ class BrotherPrinter(Printer):
         super().__init__(config)
         self._connect = connect
 
-    def prepare(self, image: Image.Image, label: LabelConfig) -> Image.Image:
+    can_chain = True
+
+    def prepare(self, image: Image.Image, label: LabelConfig, chain: bool = False) -> Image.Image:
         # The image stays in reading orientation so the preview is readable;
         # rotation into raster lines happens in encode_job(). Same pixels.
         if image.height != label.print_height_px:
             raise PrinterError(
                 f"image is {image.height} px tall but {label.name} prints {label.print_height_px}"
             )
-        return image.convert("1")
+        return add_cut_lines(image) if chain else image.convert("1")
 
-    def print(self, image: Image.Image, label: LabelConfig) -> None:
+    def feed(self) -> None:
+        """
+        Push chained labels out past the cutter: a one-line blank job with
+        chain printing off. The printer prints nothing and feeds, exactly as
+        after a normal label (checked on a PT-P300BT).
+        """
+        label = self.labels[0]  # any label: only the tape check uses it
+        blank = Image.new("1", (1, label.print_height_px), 1)
+        self._send(blank, label, chain=False, what="feed")
+
+    def print(self, image: Image.Image, label: LabelConfig, chain: bool = False) -> None:
+        self._send(image, label, chain, what="label")
+
+    def _send(self, image: Image.Image, label: LabelConfig, chain: bool, what: str) -> None:
         conn = self._open()
         try:
             status = self._check_ready(conn, label)
-            job = encode_job(image, status)
-            log.info("%s: sending %d bytes (%d lines)", self.id, len(job), image.width)
+            job = encode_job(image, status, chain)
+            log.info(
+                "%s: sending %s, %d bytes (%d lines, chain=%s)",
+                self.id,
+                what,
+                len(job),
+                image.width,
+                chain,
+            )
             conn.sendall(job)
             self._wait_until_printed(conn)
         except OSError as exc:
@@ -298,13 +327,24 @@ class BrotherPrinter(Printer):
 
     # --- steps ---------------------------------------------------------------
     def _open(self) -> Connection:
+        """
+        Connect. Straight after a job the kernel may still be closing the
+        previous RFCOMM link and answers EBUSY (seen when printing labels back
+        to back), so keep trying for a few seconds before giving up.
+        """
         started = time.monotonic()
-        try:
-            conn = self._connect(self.config.address, RFCOMM_CHANNEL, CONNECT_TIMEOUT_S)
-        except OSError as exc:
-            raise PrinterUnavailable(
-                f"{self.display_name} not reachable ({describe_os_error(exc)})"
-            ) from exc
+        while True:
+            try:
+                conn = self._connect(self.config.address, RFCOMM_CHANNEL, CONNECT_TIMEOUT_S)
+                break
+            except OSError as exc:
+                still_closing = exc.errno == errno.EBUSY
+                if still_closing and time.monotonic() - started < BUSY_RETRY_S:
+                    time.sleep(BUSY_RETRY_EVERY_S)
+                    continue
+                raise PrinterUnavailable(
+                    f"{self.display_name} not reachable ({describe_os_error(exc)})"
+                ) from exc
         log.info("%s: connected in %d ms", self.id, (time.monotonic() - started) * 1000)
         return conn
 

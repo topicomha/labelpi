@@ -36,7 +36,7 @@ def png_bytes(size=(200, 50), color="black") -> bytes:
 
 
 def upload(client, data=None, preview=False, **fields):
-    form = {"printer": "die", "label": "12x40", "file": (io.BytesIO(data or png_bytes()), "a.png")}
+    form = {"printer": "die", "label": "12x50", "file": (io.BytesIO(data or png_bytes()), "a.png")}
     form.update(fields)
     url = "/api/print/image" + ("?preview=1" if preview else "")
     return client.post(url, data=form, content_type="multipart/form-data")
@@ -58,11 +58,11 @@ def test_list_printers(client):
         {"id": "tze-12", "name": "tze-12", "continuous": True, "tape_width_mm": 12.0}
     ]
     assert die["labels"][0] == {
-        "id": "12x40",
-        "name": "12x40",
+        "id": "12x50",
+        "name": "12x50",
         "continuous": False,
         "width_mm": 12.0,
-        "length_mm": 40.0,
+        "length_mm": 50.0,
     }
 
 
@@ -95,18 +95,18 @@ def test_print_text(client, registry):
 def test_preview_text_returns_png_and_prints_nothing(client, registry):
     response = client.post(
         "/api/print/text?preview=1",
-        json={"printer": "die", "label": "12x40", "text": "Hi\nthere", "align": "left"},
+        json={"printer": "die", "label": "12x50", "text": "Hi\nthere", "align": "left"},
     )
     assert response.status_code == 200
     assert response.mimetype == "image/png"
-    assert Image.open(io.BytesIO(response.data)).size == (320, 96)
+    assert Image.open(io.BytesIO(response.data)).size == (400, 96)
     assert registry.get("die").printed == []
 
 
 def test_preview_works_while_busy(client, registry):
     with registry.claim("die"):
         response = client.post(
-            "/api/print/text?preview=1", json={"printer": "die", "label": "12x40", "text": "x"}
+            "/api/print/text?preview=1", json={"printer": "die", "label": "12x50", "text": "x"}
         )
     assert response.status_code == 200
 
@@ -123,7 +123,7 @@ def test_busy_printer_gives_409(client, registry):
 def test_other_printer_still_prints_while_one_is_busy(client, registry):
     with registry.claim("tape"):
         response = client.post(
-            "/api/print/text", json={"printer": "die", "label": "12x40", "text": "x"}
+            "/api/print/text", json={"printer": "die", "label": "12x50", "text": "x"}
         )
     assert response.status_code == 200
 
@@ -150,7 +150,7 @@ def test_other_printer_still_prints_while_one_is_busy(client, registry):
             400,
             "bad_request",
         ),
-        ({"printer": "die", "label": "12x40", "text": "x", "length_mm": 30}, 400, "bad_request"),
+        ({"printer": "die", "label": "12x50", "text": "x", "length_mm": 30}, 400, "bad_request"),
     ],
 )
 def test_print_text_errors(client, body, status, error):
@@ -172,7 +172,7 @@ def test_body_must_be_json_object(client):
 
 # --- print template -----------------------------------------------------------
 def preview(client, **body):
-    body = {"printer": "die", "label": "12x40", **body}
+    body = {"printer": "die", "label": "12x50", **body}
     return client.post("/api/print/template?preview=1", json=body)
 
 
@@ -181,7 +181,7 @@ def test_print_template(client, registry):
         "/api/print/template",
         json={
             "printer": "die",
-            "label": "12x40",
+            "label": "12x50",
             "template": "freezer",
             "fields": {"Item": "Soup"},
         },
@@ -293,7 +293,7 @@ def test_create_layout_template_fills_in_defaults(client):
 
     response = preview(client, template="ice", fields={"Item": "Peas"})
     assert response.mimetype == "image/png"
-    assert Image.open(io.BytesIO(response.data)).size == (320, 96)
+    assert Image.open(io.BytesIO(response.data)).size == (400, 96)
 
 
 def test_preview_unsaved_layout_on_tape(client):
@@ -406,7 +406,7 @@ def test_print_image(client, registry):
 def test_preview_image(client):
     response = upload(client, preview=True, dither="true", invert="false")
     assert response.mimetype == "image/png"
-    assert Image.open(io.BytesIO(response.data)).size == (320, 96)
+    assert Image.open(io.BytesIO(response.data)).size == (400, 96)
 
 
 def test_image_on_tape_with_length(client):
@@ -417,7 +417,7 @@ def test_image_on_tape_with_length(client):
 def test_image_missing_file(client):
     response = client.post(
         "/api/print/image",
-        data={"printer": "die", "label": "12x40"},
+        data={"printer": "die", "label": "12x50"},
         content_type="multipart/form-data",
     )
     assert_error(response, 400, "bad_request")
@@ -465,12 +465,12 @@ def test_upload_too_large(write_config, tmp_path):
     ],
 )
 def test_printer_failures(client, registry, monkeypatch, exception, status, error):
-    def broken_print(image, label):
+    def broken_print(image, label, chain=False):
         raise exception
 
     monkeypatch.setattr(registry.get("die"), "print", broken_print)
     response = client.post(
-        "/api/print/text", json={"printer": "die", "label": "12x40", "text": "x"}
+        "/api/print/text", json={"printer": "die", "label": "12x50", "text": "x"}
     )
     assert_error(response, status, error)
     assert not registry.is_busy("die")  # lock released even after a failure
@@ -483,3 +483,96 @@ def test_unknown_api_url_is_json_404(client):
 
 def test_wrong_method_is_json_405(client):
     assert_error(client.get("/api/print/text"), 405, "method_not_allowed")
+
+
+# --- calibration ruler -------------------------------------------------------------
+def test_ruler_preview_and_print(client, registry):
+    response = client.post(
+        "/api/print/ruler?preview=1", json={"printer": "tape", "label": "tze-12", "length_mm": 30}
+    )
+    assert response.mimetype == "image/png"
+    assert Image.open(io.BytesIO(response.data)).size == (round(30 * 180 / 25.4), 64)
+    printed = client.post("/api/print/ruler", json={"printer": "die", "label": "12x50"})
+    assert printed.status_code == 200, printed.get_json()
+    assert len(registry.get("die").printed) == 1
+    assert_error(
+        client.post("/api/print/ruler", json={"printer": "die", "label": "12x50", "length_mm": 9}),
+        400,
+        "bad_request",
+    )
+
+
+# --- chain printing (tape) and feed ---------------------------------------------------
+def tape_text(client, preview=False, **extra):
+    url = "/api/print/text" + ("?preview=1" if preview else "")
+    return client.post(url, json={"printer": "tape", "label": "tze-12", "text": "Hi", **extra})
+
+
+def test_printers_say_who_can_chain(client):
+    tape, die = client.get("/api/printers").get_json()
+    assert tape["can_chain"] is True and tape["auto_feed"] is True
+    assert die["can_chain"] is False and "auto_feed" not in die
+
+
+def test_auto_feed_setting_chains_labels(client, registry):
+    response = client.put("/api/printers/tape/settings", json={"auto_feed": False})
+    assert response.status_code == 200 and response.get_json()["auto_feed"] is False
+    assert client.get("/api/printers").get_json()[0]["auto_feed"] is False
+
+    printed = tape_text(client)
+    assert printed.get_json()["fed"] is False
+    assert tape_text(client, auto_feed=True).get_json()["fed"] is True  # per-request override
+    assert registry.get("tape").chained == [True, False]
+
+
+def test_chained_preview_shows_cut_lines(client):
+    plain = Image.open(io.BytesIO(tape_text(client, preview=True).data))
+    chained = Image.open(io.BytesIO(tape_text(client, preview=True, auto_feed=False).data))
+    assert plain.getpixel((0, 0)) != 0 and chained.getpixel((0, 0)) == 0
+
+
+def test_die_cut_labels_never_chain(client, registry):
+    response = client.post(
+        "/api/print/text",
+        json={"printer": "die", "label": "12x50", "text": "x", "auto_feed": False},
+    )
+    assert response.get_json()["fed"] is True
+    assert registry.get("die").chained == [False]
+
+
+@pytest.mark.parametrize(
+    "printer, body, status",
+    [
+        ("tape", {"auto_feed": "no"}, 400),
+        ("tape", {"colour": "red"}, 400),
+        ("die", {"auto_feed": False}, 400),
+        ("nope", {"auto_feed": False}, 404),
+    ],
+)
+def test_printer_settings_errors(client, printer, body, status):
+    assert client.put(f"/api/printers/{printer}/settings", json=body).status_code == status
+
+
+def test_bad_auto_feed_on_a_print_is_400(client):
+    assert_error(tape_text(client, auto_feed="yes"), 400, "bad_request")
+
+
+def test_feed(client, registry):
+    response = client.post("/api/printers/tape/feed")
+    assert response.status_code == 200 and response.get_json()["status"] == "fed"
+    assert registry.get("tape").feeds == 1
+    assert_error(client.post("/api/printers/die/feed"), 400, "bad_request")
+    assert_error(client.post("/api/printers/nope/feed"), 404, "not_found")
+    with registry.claim("tape"):
+        assert_error(client.post("/api/printers/tape/feed"), 409, "busy")
+
+
+def test_image_upload_can_chain(client, registry):
+    form = {
+        "printer": "tape",
+        "label": "tze-12",
+        "auto_feed": "false",
+        "file": (io.BytesIO(png_bytes()), "a.png"),
+    }
+    response = client.post("/api/print/image", data=form, content_type="multipart/form-data")
+    assert response.get_json()["fed"] is False

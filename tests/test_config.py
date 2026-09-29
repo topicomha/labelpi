@@ -11,15 +11,15 @@ def test_example_config_is_valid():
     config = load_config(EXAMPLE_CONFIG)
     assert [p.id for p in config.printers] == ["brother", "d30"]
     assert config.printer("brother").label("tze-12").print_height_px == 64
-    assert config.printer("d30").label("12x40").continuous is False
+    assert config.printer("d30").label("12x50").continuous is False
     assert [t.id for t in config.templates] == ["leftovers"]
 
 
 def test_minimal_config_values(config):
     tape = config.printer("tape").label("tze-12")
     assert tape.continuous and tape.print_height_px == 64 and tape.margin_mm == 2.0
-    die = config.printer("die").label("12x40")
-    assert (die.width_mm, die.length_mm, die.offset_mm, die.margin_mm) == (12.0, 40.0, 0.0, 1.0)
+    die = config.printer("die").label("12x50")
+    assert (die.width_mm, die.length_mm, die.offset_mm, die.margin_mm) == (12.0, 50.0, 0.0, 1.0)
     assert config.printer("die").display_name == "die"  # defaults to the id
     assert config.server.port == 8080  # [server] is optional
 
@@ -49,11 +49,11 @@ def test_no_printers(write_config):
 
 
 def test_error_names_file_printer_label_and_field(write_config):
-    text = MINIMAL_TOML.replace("length_mm = 40", "")
+    text = MINIMAL_TOML.replace("length_mm = 50", "")
     message = _error(write_config, text)
     assert "printers.toml" in message
     assert 'printers[1] (id "die")' in message
-    assert 'labels[0] (id "12x40")' in message
+    assert 'labels[0] (id "12x50")' in message
     assert '"length_mm" is required for a fixed-size label' in message
 
 
@@ -88,7 +88,7 @@ def test_mock_printer_needs_no_address(write_config):
           id = "a"
           continuous = false
           width_mm = 12
-          length_mm = 40
+          length_mm = 50
     """)
     )
     assert config.printer("m").address is None
@@ -119,19 +119,19 @@ def test_duplicate_label_id_within_a_printer(write_config):
         MINIMAL_TOML
         + """
   [[printers.labels]]
-  id = "12x40"
+  id = "12x50"
   continuous = false
   width_mm = 12
   length_mm = 30
 """
     )
-    assert 'duplicate label id "12x40"' in _error(write_config, text)
+    assert 'duplicate label id "12x50"' in _error(write_config, text)
 
 
 def test_same_label_id_on_two_printers_is_fine(write_config):
-    text = MINIMAL_TOML.replace('id = "tze-12"', 'id = "12x40"')
+    text = MINIMAL_TOML.replace('id = "tze-12"', 'id = "12x50"')
     config = load_config(write_config(text))
-    assert config.printer("tape").label("12x40").continuous
+    assert config.printer("tape").label("12x50").continuous
 
 
 def test_bad_id_characters(write_config):

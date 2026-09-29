@@ -17,7 +17,7 @@ _Last updated: 2026-09-28._
 | 4 | Brother PT-P300BT backend (own encoder) | done — **real prints verified** |
 | 8 | Templates: fill-in fields, date maths, editor on the page | done |
 | 10 | Template layouts: background, shapes, icons, pictures | done on branch `templates-layout` — **not yet printed on real hardware** |
-| 5 | Phomemo D30 backend (BLE) | merged — **printed physical label not yet checked** (see below) |
+| 5 | Phomemo D30 backend (BLE) | done — **real print verified** (calibration ruler, 2026-09-28) |
 | 9 | Label sizes managed from the page | next |
 | 7 | Printer setup from the page: discovery, pairing, calibration | after 9 |
 | 6 | Deploy to the Pi Zero W: systemd, auto-deploy, Pi setup verified | last |
@@ -37,29 +37,47 @@ Zero W.
   real backend. Connect ~4 s, send ~0.4 s, print ~8 s for a 63 mm label; the
   printer confirms completion. 12 mm tape band = 64 px (rows 32–95),
   measured with the calibration strip. Raster output is bit-identical to the
-  spike encoder that printed correctly.
+  spike encoder that printed correctly. **Calibration ruler 2026-09-28**
+  (`POST /api/print/ruler`, 50 mm, measured against an inch ruler): length
+  true (~49.7 mm for 50), both band edge lines print with ~1.5 mm of tape
+  above and below, i.e. centred. (An earlier note that it prints 0.149 mm
+  per line / ~5 % long was wrong.) Every job starts with **~24 mm of blank
+  lead**: the head-to-cutter distance, fed out after the previous job so it
+  could be cut.
 - **Phomemo D30** — the Milestone 5 backend connected over BLE (~2.7 s),
   got paper/cover status, and the printer acknowledged all 3,857 bytes of a
-  Freezer-template job. **Nobody has looked at the resulting label yet.** The
-  spike's BLE print (same bytes) was readable, but started ~12 mm into the
-  label and ran off its far end.
+  Freezer-template job (nobody looked at that label). On 2026-09-28 the
+  backend's calibration ruler (`POST /api/print/ruler`, after a power cycle)
+  printed identically to the spike's: **verified**. Connect ~2.7–3.4 s, send
+  ~0.9 s, whole request ~11 s (4 s settle wait included).
+- **D30 label geometry — calibrated 2026-09-28** with a ruler print (the
+  spike's; now `POST /api/print/ruler`, same drawing): the labels
+  are **12 × 50 mm**; a 50 mm image lands with 0 ~0.5 mm before the leading
+  edge and 50 at the far end, true to scale, reading the right way round.
+  So `length_mm = 50`, `offset_mm = 0`. The earlier "~12 mm in" was a 40 mm
+  image on a 50 mm label — the printer aligns images with the label's end.
 
 ## Open questions — resolve first
 
-1. **Check the D30 label from the Milestone 5 test**: readable? right way
-   round? where on the label? Measure one label's real length (gap to gap).
-   Then set `length_mm` / `offset_mm` for it in `config/printers.toml`
-   (`offset_mm` shifts the print along the label; + = later) and correct
-   `config/printers.example.toml` (12 × 40 is unconfirmed — may be 12 × 50).
-   Use `spike/spike_phomemo.py --calibrate` to print a mm ruler if needed.
+0. **Printers going to sleep** (owner, 2026-09-28: "we'll have to figure out
+   how to handle these timeouts or sleeps"). The Brother drops off Bluetooth
+   when idle ("Host is down"; its green light flashes; a button press wakes
+   it), and the D30 sleeps too. Today that's a 503 "not reachable". Decide:
+   a clearer "asleep - press its button" message, a status poll on the page,
+   or keeping them awake. Connect is ~3–3.7 s from cold vs ~0.2–0.5 s awake.
+
+1. **Watch the D30's first-job-after-idle Bluetooth drops** ("GATT Protocol
+   Error: Unlikely Error" straight after connecting, seen three times on
+   2026-09-28). The backend now waits 0.5 s after connecting and retries once
+   if the link drops before any image data; check in the log
+   (`trying once more`) whether that's enough. Note: the D30's label id
+   changed from `12x40` to `12x50` - a browser that remembered `12x40` just
+   falls back to the first label.
 2. **Print the new layout starters on both printers** and check: thin lines
    (0.3 mm = 2 px on the Brother) visible? small second-line text readable?
-   icons crisp? frames not cut off at the label edge (D30 position is still
-   uncalibrated, see 1)? Adjust `labelpi/starters.py` to taste.
+   icons crisp? frames not cut off at the label edge? Adjust
+   `labelpi/starters.py` to taste.
 3. Brother 9 mm / 6 mm bands (48 / 32 px) are unverified guesses.
-4. Along the tape the Brother prints 0.149 mm per line (~170 dpi) while
-   config says 180 dpi, so tape labels come out ~5 % longer than
-   `length_mm` asks for. Minor; fix if it matters.
 
 ## Template layouts (Milestone 10) in short
 
@@ -151,6 +169,17 @@ To push from the Pi you need GitHub credentials there, e.g. `gh auth login`
 
 ## Gotchas learned the hard way
 
+- **A half-sent D30 job wrecks the next one.** If the BLE link drops mid-image,
+  the D30 keeps waiting for the rest and takes the next job's bytes (status
+  queries included) as that rest: the next label comes out shifted across its
+  width, numbers cut off at one edge and reappearing at the other (seen
+  2026-09-28). A power cycle clears it. The backend now refuses to print when
+  the D30 answers neither status query, and a mid-job drop says to power-cycle.
+- **Brother chain printing works** (2026-09-28): ESC i K without the
+  no-chaining bit → no feed-out, labels ~2–3 mm apart; a one-line blank job
+  with the bit set feeds the strip out to the cutter. Reconnecting straight
+  after a job can fail with EBUSY while Linux closes the old RFCOMM link —
+  the backend retries for up to 5 s.
 - A jammed D30 label swallows jobs silently while still reporting "paper
   present". If nothing comes out, reseat the roll.
 - The D30 disappears from scans while a phone is connected to it or when it

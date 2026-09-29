@@ -8,6 +8,7 @@ from labelpi.render import (
     RenderError,
     canvas_for,
     fit_image,
+    render_ruler,
     render_text,
 )
 
@@ -35,7 +36,7 @@ def test_continuous_canvas_with_length(tape_label):
 
 def test_fixed_canvas(die_label):
     canvas = canvas_for(die_label, PHOMEMO_DPI)
-    assert (canvas.width, canvas.height) == (320, 96)  # 40 x 12 mm at 8 px/mm
+    assert (canvas.width, canvas.height) == (400, 96)  # 50 x 12 mm at 8 px/mm
     assert canvas.inner_height == 96 - 2 * canvas.margin
 
 
@@ -73,11 +74,11 @@ def test_tape_keeps_end_margins(tape_label):
 
 def test_text_on_fixed_label_stays_inside_margins(die_label):
     image = render_text("A rather long line of text", die_label, PHOMEMO_DPI)
-    assert image.size == (320, 96)
+    assert image.size == (400, 96)
     margin = canvas_for(die_label, PHOMEMO_DPI).margin
     left, top, right, bottom = black_box(image)
     assert left >= margin and top >= margin
-    assert right <= 320 - margin and bottom <= 96 - margin
+    assert right <= 400 - margin and bottom <= 96 - margin
 
 
 def test_more_lines_means_smaller_text(die_label):
@@ -93,7 +94,7 @@ def test_alignment(die_label, align):
     left, _, right, _ = black_box(render_text("ab\nabcdefgh", die_label, PHOMEMO_DPI, align=align))
     # Render the short line alone to see where alignment put it.
     short = black_box(render_text("ab\n", die_label, PHOMEMO_DPI, align=align))
-    centre = 320 / 2
+    centre = 400 / 2
     if align == "left":
         assert short[0] < centre - 40
     elif align == "right":
@@ -155,11 +156,11 @@ def test_image_on_tape_scales_to_band(tape_label):
 
 def test_image_on_fixed_label_is_contained_and_centred(die_label):
     image = fit_image(wide_logo(), die_label, PHOMEMO_DPI)
-    assert image.size == (320, 96)
+    assert image.size == (400, 96)
     left, top, right, bottom = black_box(image)
     margin = canvas_for(die_label, PHOMEMO_DPI).margin
-    assert left >= margin and right <= 320 - margin  # never cropped
-    assert abs((left + right) / 2 - 160) <= 2  # centred
+    assert left >= margin and right <= 400 - margin  # never cropped
+    assert abs((left + right) / 2 - 200) <= 2  # centred
     assert abs((top + bottom) / 2 - 48) <= 2
 
 
@@ -189,3 +190,26 @@ def test_dither_gives_a_pattern_for_grey(die_label):
     plain_black = plain.convert("L").histogram()[0]
     dithered_black = dithered.convert("L").histogram()[0]
     assert 0 < dithered_black < plain_black  # some dots, not a solid block
+
+
+# --- calibration ruler ----------------------------------------------------------
+def test_ruler_covers_the_whole_fixed_label(die_label):
+    image = render_ruler(die_label, PHOMEMO_DPI)
+    assert image.size == (400, 96) and image.mode == "1"
+    assert image.getpixel((2, 48)) == 0  # the 0 mm bar, ignoring the margin
+    assert image.getpixel((399, 5)) == 0  # the 50 mm tick at the very end
+    assert image.getpixel((200, 48)) != 0  # mid-label, below the ticks: blank
+
+
+def test_ruler_on_tape(tape_label):
+    assert render_ruler(tape_label, BROTHER_DPI).size == (round(50 * BROTHER_DPI / 25.4), 64)
+    assert render_ruler(tape_label, BROTHER_DPI, length_mm=20).width == round(
+        20 * BROTHER_DPI / 25.4
+    )
+
+
+def test_ruler_errors(die_label, tape_label):
+    with pytest.raises(RenderError, match="fixed size"):
+        render_ruler(die_label, PHOMEMO_DPI, length_mm=30)
+    with pytest.raises(RenderError):
+        render_ruler(tape_label, BROTHER_DPI, length_mm=0)

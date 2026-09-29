@@ -18,7 +18,7 @@ from labelpi.starters import STARTER_TEMPLATES
 from labelpi.templates import TemplateError
 
 NOW = datetime(2026, 9, 28, 14, 5)
-DIE_DPI = 203  # 12 x 40 mm at 203 dpi, 1 mm margin -> 320 x 96 px, area 8..312 x 8..88
+DIE_DPI = 203  # 12 x 50 mm at 203 dpi, 1 mm margin -> 400 x 96 px, area 8..392 x 8..88
 TAPE_DPI = 180
 
 
@@ -136,7 +136,7 @@ def test_fields_and_assets():
 # --- rendering -------------------------------------------------------------------
 def test_size_and_mode(die_label, tape_label):
     image = render({"elements": [text()]}, die_label)
-    assert image.size == (320, 96) and image.mode == "1"
+    assert image.size == (400, 96) and image.mode == "1"
     # Tape: band height, length from tape_length_mm (or the request).
     tape = render({"elements": [text()], "tape_length_mm": 30}, tape_label, TAPE_DPI)
     assert tape.size == (round(30 * TAPE_DPI / 25.4), 64)
@@ -145,17 +145,17 @@ def test_size_and_mode(die_label, tape_label):
 
 
 def test_filled_rect_covers_its_box(die_label):
-    # Left half of the printable area (x 8..160), full height (y 8..88).
+    # Left half of the printable area (x 8..200), full height (y 8..88).
     image = render({"elements": [{"type": "rect", "w": 50, "fill": "black"}]}, die_label)
-    assert black(image, 8, 8) and black(image, 159, 87)
-    assert not black(image, 161, 50)
+    assert black(image, 8, 8) and black(image, 199, 87)
+    assert not black(image, 201, 50)
     assert not black(image, 4, 50)  # the margin stays white
 
 
 def test_outline_rect_is_hollow(die_label):
     image = render({"elements": [{"type": "rect", "stroke_mm": 0.5}]}, die_label)
-    assert black(image, 8, 50) and black(image, 311, 50)
-    assert not black(image, 160, 48)
+    assert black(image, 8, 50) and black(image, 391, 50)
+    assert not black(image, 200, 48)
 
 
 def test_line(die_label):
@@ -166,7 +166,7 @@ def test_line(die_label):
 
 def test_ellipse(die_label):
     image = render({"elements": [{"type": "ellipse", "fill": "black"}]}, die_label)
-    assert black(image, 160, 48)  # centre
+    assert black(image, 200, 48)  # centre
     assert not black(image, 9, 9)  # corner of its box
 
 
@@ -181,8 +181,8 @@ def test_black_background_with_white_text(die_label):
 @pytest.mark.parametrize("frame", ["line", "rounded", "double"])
 def test_frames(die_label, frame):
     image = render({"background": {"frame": frame}}, die_label)
-    assert black(image, 160, 8) and black(image, 8, 48)  # on the edge of the area
-    assert not black(image, 160, 48)
+    assert black(image, 200, 8) and black(image, 8, 48)  # on the edge of the area
+    assert not black(image, 200, 48)
 
 
 def test_icon_is_drawn_inside_its_box(die_label):
@@ -190,8 +190,8 @@ def test_icon_is_drawn_inside_its_box(die_label):
         {"elements": [{"type": "icon", "w": 20, "icon": "fa-solid:snowflake"}]}, die_label
     )
     assert black_pixels(image) > 500
-    xs = [x for x in range(320) for y in range(96) if black(image, x, y)]
-    assert min(xs) >= 8 and max(xs) < 8 + 61  # 20 % of the 304 px area, + rounding
+    xs = [x for x in range(400) for y in range(96) if black(image, x, y)]
+    assert min(xs) >= 8 and max(xs) < 8 + 78  # 20 % of the 384 px area, + rounding
 
 
 def test_text_shrinks_to_fit_and_respects_size(die_label):
@@ -207,8 +207,8 @@ def test_text_alignment(die_label):
 
     left = ink_x(render({"elements": [text(text="Hi", size_mm=4, align="left")]}, die_label))
     right = ink_x(render({"elements": [text(text="Hi", size_mm=4, align="right")]}, die_label))
-    assert left[0] < 20 and left[1] < 160  # hugging the left edge of the area (x = 8)
-    assert right[1] > 300 and right[0] > 160  # hugging the right edge (x = 312)
+    assert left[0] < 20 and left[1] < 200  # hugging the left edge of the area (x = 8)
+    assert right[1] > 380 and right[0] > 200  # hugging the right edge (x = 392)
 
 
 def test_empty_field_leaves_the_box_empty(die_label):
@@ -227,7 +227,7 @@ def test_text_that_cannot_fit_names_the_element(die_label):
 def test_images(die_label, tmp_path):
     store = AssetStore(tmp_path / "assets")
     asset = store.add(Image.new("RGB", (100, 100), "black")).id
-    for fit, expected_black in (("contain", 80 * 80), ("cover", 152 * 80), ("stretch", 152 * 80)):
+    for fit, expected_black in (("contain", 80 * 80), ("cover", 192 * 80), ("stretch", 192 * 80)):
         image = render(
             {"elements": [{"type": "image", "asset": asset, "w": 50, "fit": fit}]},
             die_label,
@@ -247,7 +247,7 @@ def test_dithered_background_image(die_label, tmp_path):
     dithered = render(
         {"background": {"image": {"asset": grey, "dither": True}}}, die_label, assets=store
     )
-    area = 304 * 80
+    area = 384 * 80
     assert black_pixels(plain) in (0, area)  # threshold: all one colour
     assert 0.3 * area < black_pixels(dithered) < 0.7 * area  # dithered: about half
 

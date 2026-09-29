@@ -17,9 +17,8 @@ __pycache__/
 *.egg-info/
 
 # --- Output ------------------------------------------------------------------
-# Mock backend and spike scripts write PNGs here.
+# The mock backend writes PNGs here.
 out/
-spike/libs/
 
 # --- Editors / tools ---------------------------------------------------------
 .vscode/

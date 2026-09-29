@@ -71,8 +71,6 @@ bleak uses to talk to BlueZ.
 **Development** (`requirements-dev.txt`): [pytest](https://pytest.org/) (MIT),
 [ruff](https://github.com/astral-sh/ruff) (MIT).
 
-**Spike scripts only** (`spike/`, not the app): pyserial (BSD), packbits (MIT).
-
 **From the system:** Python 3.11+ standard library — `socket` for Bluetooth
 Classic RFCOMM to the Brother, `tomllib` for the config — and BlueZ.
 
