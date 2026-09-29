@@ -21,11 +21,6 @@ def test_labelpi_mock_env_forces_mock(registry):
     assert [p.id for p in registry.all()] == ["tape", "die"]
 
 
-def test_real_backends_not_available_yet(config):
-    with pytest.raises(NotImplementedError, match="LABELPI_MOCK=1"):
-        Registry.from_config(config, force_mock=False)
-
-
 def test_unknown_printer(registry):
     assert registry.get("nope") is None
 
