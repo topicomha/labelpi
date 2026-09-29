@@ -106,7 +106,7 @@ Fields: `printer`, `label`, `file`, optional `dither`, `invert`, `length_mm`.
 
 ### `POST /api/print/template`
 ```json
-{ "printer": "d30", "label": "12x40", "template": "freezer",
+{ "printer": "d30", "label": "12x50", "template": "freezer",
   "fields": { "Item": "Chicken soup" }, "align": "center" }
 ```
 Instead of `"template": id`, `"text": "<template text>"` prints/previews an
@@ -140,7 +140,7 @@ curl -X POST http://labelpi.lan:8080/api/print/text \
   -d '{"printer":"brother","label":"tze-12","text":"Server rack 2"}'
 
 curl -X POST http://labelpi.lan:8080/api/print/image \
-  -F printer=d30 -F label=12x40 -F file=@logo.png
+  -F printer=d30 -F label=12x50 -F file=@logo.png
 ```
 
 ## 6. Web UI
@@ -239,9 +239,12 @@ re-checked on the Zero. Scripts are in `spike/`.
 **Open items**
 - ~~Licence~~ — resolved: Milestone 4 is our own encoder; nothing of
   Ircama's is vendored (the spike still imports it from a clone for reference).
-- **D30 label geometry.** A 40 mm image started ~12 mm into the label and ran
-  off its far end. The roll may be 12 × 50 mm rather than 12 × 40, so the
-  real size is unconfirmed. Needs calibration (§11).
+- ~~D30 label geometry~~ — resolved 2026-09-28: the labels are 12 × 50 mm
+  (ruler print, measured gap to gap). A 50 mm image lands on the label with
+  its 0 ~0.5 mm before the leading edge and 50 at the far end; the scale is
+  true (203 dpi). The earlier "starts ~12 mm in" was a 40 mm image on a
+  50 mm label: the printer aligns the image with the label's end.
+  `length_mm = 50`, `offset_mm = 0`.
 - **Brother 9 mm / 6 mm tape**: 48 / 32 px are Ircama's numbers, unverified.
 - **D30 over Classic**: a single burst didn't print; paced chunks were sent
   once, but nobody checked whether that label printed. Only worth revisiting

@@ -11,7 +11,7 @@ def test_example_config_is_valid():
     config = load_config(EXAMPLE_CONFIG)
     assert [p.id for p in config.printers] == ["brother", "d30"]
     assert config.printer("brother").label("tze-12").print_height_px == 64
-    assert config.printer("d30").label("12x40").continuous is False
+    assert config.printer("d30").label("12x50").continuous is False
     assert [t.id for t in config.templates] == ["leftovers"]
 
 

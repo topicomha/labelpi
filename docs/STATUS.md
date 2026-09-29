@@ -16,7 +16,7 @@ _Last updated: 2026-09-28._
 | 3 | Web UI | done |
 | 4 | Brother PT-P300BT backend (own encoder) | done — **real prints verified** |
 | 8 | Templates: fill-in fields, date maths, editor on the page | done |
-| 5 | Phomemo D30 backend (BLE) | merged — **printed physical label not yet checked** (see below) |
+| 5 | Phomemo D30 backend (BLE) | merged — label size/position calibrated; **a backend-printed label not yet checked** (see below) |
 | 9 | Label sizes managed from the page | next |
 | 7 | Printer setup from the page: discovery, pairing, calibration | after 9 |
 | 6 | Deploy to the Pi Zero W: systemd, auto-deploy, Pi setup verified | last |
@@ -38,18 +38,22 @@ Zero W.
   spike encoder that printed correctly.
 - **Phomemo D30** — the Milestone 5 backend connected over BLE (~2.7 s),
   got paper/cover status, and the printer acknowledged all 3,857 bytes of a
-  Freezer-template job. **Nobody has looked at the resulting label yet.** The
-  spike's BLE print (same bytes) was readable, but started ~12 mm into the
-  label and ran off its far end.
+  Freezer-template job. **Nobody has looked at the resulting label yet.**
+- **D30 label geometry — calibrated 2026-09-28** with the spike's ruler
+  (`spike_phomemo.py --transport ble --calibrate --label 12x50`): the labels
+  are **12 × 50 mm**; a 50 mm image lands with 0 ~0.5 mm before the leading
+  edge and 50 at the far end, true to scale, reading the right way round.
+  So `length_mm = 50`, `offset_mm = 0`. The earlier "~12 mm in" was a 40 mm
+  image on a 50 mm label — the printer aligns images with the label's end.
 
 ## Open questions — resolve first
 
-1. **Check the D30 label from the Milestone 5 test**: readable? right way
-   round? where on the label? Measure one label's real length (gap to gap).
-   Then set `length_mm` / `offset_mm` for it in `config/printers.toml`
-   (`offset_mm` shifts the print along the label; + = later) and correct
-   `config/printers.example.toml` (12 × 40 is unconfirmed — may be 12 × 50).
-   Use `spike/spike_phomemo.py --calibrate` to print a mm ruler if needed.
+1. **Print a template on the D30 through the real backend** (the page or
+   the API, label `12x50`) and look at it. Geometry is now calibrated (see
+   "Verified"), but that was the spike's ruler; the Milestone 5 backend's own
+   output still hasn't been looked at. Note: the D30's label id changed from
+   `12x40` to `12x50` - a browser that remembered `12x40` just falls back to
+   the first label.
 2. Three-line templates (e.g. Freezer) are small on 12 mm Brother tape (all
    lines share ~9 mm). Owner may want one-line, tape-friendly variants.
 3. Brother 9 mm / 6 mm bands (48 / 32 px) are unverified guesses.
