@@ -64,6 +64,7 @@ def fast(monkeypatch):
 
     monkeypatch.setattr(phomemo, "PRINT_SETTLE_S", 0.05)
     monkeypatch.setattr(phomemo, "QUERY_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(phomemo, "SETTLE_AFTER_CONNECT_S", 0)
 
 
 @pytest.fixture
@@ -213,12 +214,41 @@ def test_connection_drops_mid_job(d30_config, die_label):
     assert fake.closed
 
 
-def test_connection_drops_before_the_job(d30_config, die_label):
-    """Nothing of the image was sent, so the printer isn't stuck: plain error."""
-    fake = FakeD30(fail_on_write=2)  # fails right after the two status queries
+def test_drop_before_the_image_is_retried_once(d30_config, die_label):
+    """Nothing of the image was sent, so a fresh connection can try again."""
+    first = FakeD30(fail_on_write=2)  # fails right after the two status queries
+    second = FakeD30()
+    sessions = [first, second]
+
+    async def open_session(address, timeout):
+        return sessions.pop(0)
+
+    printer = PhomemoPrinter(d30_config, open_session=open_session)
+    printer.print(label_image(die_label), die_label)
+    assert first.job == b"" and first.closed
+    assert second.job.endswith(END_OF_JOB) and second.closed
+
+
+def test_drop_before_the_image_twice_gives_up(d30_config, die_label):
+    fake = FakeD30(fail_on_write=2)  # the same fake fails both attempts
     with pytest.raises(PrinterUnavailable, match="connection lost") as caught:
         make_printer(d30_config, fake).print(label_image(die_label), die_label)
-    assert "off and on" not in str(caught.value)
+    assert "off and on" not in str(caught.value)  # nothing half-sent: no power cycle
+
+
+def test_drop_mid_image_is_not_retried(d30_config, die_label):
+    """Retrying would print into the half-sent image."""
+    opened = []
+
+    async def open_session(address, timeout):
+        opened.append(1)
+        return FakeD30(fail_on_write=5)
+
+    with pytest.raises(PrinterUnavailable, match="off and on"):
+        PhomemoPrinter(d30_config, open_session=open_session).print(
+            label_image(die_label), die_label
+        )
+    assert len(opened) == 1
 
 
 def test_status(d30_config):
