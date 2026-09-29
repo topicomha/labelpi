@@ -191,7 +191,7 @@ it from its device list).
 1. Config loading + validation, render module, mock backend, tests — **done**.
 2. API with mock backend, tests — **done**.
 3. Web UI — **done**.
-4. Real Brother backend. **Blocked on the licence question in §10.**
+4. Real Brother backend — **done** (own encoder; no vendored code, so no licence issue).
 5. Real Phomemo backend (small in-house ESC/POS encoder + BLE via `bleak`).
 6. Deploy script, systemd unit, Pi setup doc verified end to end.
 7. Printer setup from the UI: discovery, pairing, calibration (§11).
