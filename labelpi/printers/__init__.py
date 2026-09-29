@@ -45,7 +45,10 @@ def build_printer(config: PrinterConfig, force_mock: bool, out_dir: Path) -> Pri
         from labelpi.printers.brother import BrotherPrinter
 
         return BrotherPrinter(config)
-    # The Phomemo backend arrives in Milestone 5.
+    if config.type == "phomemo":
+        from labelpi.printers.phomemo import PhomemoPrinter
+
+        return PhomemoPrinter(config)
     raise NotImplementedError(
         f'printer "{config.id}": the "{config.type}" backend is not written yet - '
         "run with LABELPI_MOCK=1 for now"

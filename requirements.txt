@@ -1,6 +1,7 @@
 # Runtime dependencies. All must install on a Pi Zero W (ARMv6) without
 # compiling: pure Python, or with wheels on piwheels.
-# bleak arrives with the Phomemo backend (Milestone 5).
 flask>=3.0
 waitress>=3.0
 pillow>=10.1
+# BLE for the Phomemo D30 (it only printed over BLE in Milestone 0).
+bleak>=0.22

@@ -8,7 +8,7 @@ import struct
 import pytest
 from PIL import Image, ImageDraw
 
-from labelpi.printers import PrinterError, PrinterUnavailable, Registry
+from labelpi.printers import PrinterError, PrinterUnavailable
 from labelpi.printers.brother import (
     INITIALIZE,
     PRINT_AND_FEED,
@@ -273,8 +273,3 @@ def test_connection_drops_mid_job(brother_config, tape_label):
 def test_status_method(brother_config):
     info = make_printer(brother_config, FakePrinter()).status()
     assert info == {"tape_width_mm": 12, "errors": "", "ready": True}
-
-
-def test_registry_builds_brother_backend(config, tmp_path):
-    with pytest.raises(NotImplementedError, match="phomemo"):  # the D30 is still pending
-        Registry.from_config(config, force_mock=False, out_dir=tmp_path)
