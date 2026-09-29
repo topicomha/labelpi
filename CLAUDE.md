@@ -1,7 +1,8 @@
 # CLAUDE.md — labelpi
 
-Guidance for Claude Code when working in this repository. Read this first, then
-`docs/SPEC.md` for the full behaviour and API contract.
+Guidance for Claude Code when working in this repository. Read this first,
+then **`docs/STATUS.md`** (where things stand, what's verified, what's next —
+the handoff between sessions) and `docs/SPEC.md` (full behaviour and API).
 
 ## What this is
 
@@ -100,25 +101,24 @@ requirements-dev.txt
 
 ## Commands
 
-Dev (on the Manjaro laptop, no printers needed):
+Dev (any Linux box or the Pi; on Windows use `.venv/Scripts/...`):
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-cp config/printers.example.toml config/printers.toml   # set backend = "mock"
-python run.py --dev            # Flask dev server with reload on :8080
-pytest                         # run tests
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+cp config/printers.example.toml config/printers.toml   # then set the real MACs
+LABELPI_MOCK=1 .venv/bin/python run.py --dev   # no printers: PNGs go to ./out/
+.venv/bin/python -m pytest                     # run tests (no hardware)
+.venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
 
-Prod (on the Pi — normally you never run this by hand, systemd does):
-
-```bash
-.venv/bin/python run.py        # waitress on 0.0.0.0:8080
-```
+With real printers (on a Pi they're paired to), drop `LABELPI_MOCK=1`:
+`.venv/bin/python run.py` serves waitress on the `[server]` host/port.
+In production systemd runs it (Milestone 6).
 
 Setting `LABELPI_MOCK=1` forces every printer to the mock backend regardless of
-config — use this for local dev and in tests.
+config — use this for local dev and in tests. `LABELPI_CONFIG` and
+`LABELPI_SETTINGS` override the config and settings file paths.
 
 ## Testing
 
@@ -155,8 +155,36 @@ config — use this for local dev and in tests.
    setup UI (Milestone 7).
 5. **Licences.** Check the licence of each piece of code before vendoring it and
    keep its LICENSE file alongside it in `vendor/`.
-6. The `spike/` scripts are the working reference for both printers until
-   Milestones 4–5 replace them; delete the folder after that.
+6. The `spike/` scripts are superseded by the real backends (Milestones 4–5)
+   but their `--calibrate` rulers are the reference for the calibration UI
+   (Milestone 7). Delete the folder once that exists.
+
+## Working agreements (how the owner wants this repo run)
+
+- **Public repo** (github.com/topicomha/labelpi, MIT). **Never commit private
+  data**: real Bluetooth MACs, IP addresses, hostnames, serial numbers, emails.
+  Real values live only in the gitignored `config/printers.toml` and
+  `config/settings.json`. Before every push, grep the tracked files for any
+  real MAC/IP you've seen this session (`git grep -n -I -iE "<mac>|<ip>"`).
+- **Commit identity** for this repo: `David Boyd
+  <10187806+topicomha@users.noreply.github.com>` (the GitHub noreply
+  address). Set it with repo-local `git config user.name/user.email` in a
+  fresh clone — never use the owner's real email addresses.
+- **Credit Claude Code**: the README says the project is mostly written by
+  Claude Code; commits Claude makes end with a `Co-Authored-By: Claude …`
+  trailer; PR bodies end with the Claude Code line.
+- **One branch per milestone/feature**, created from the latest `main`; open a
+  PR; merge (merge commit, delete branch) once tests + ruff pass and, for
+  printer changes, a real print has been checked. `main` must always run —
+  the Pi deploys whatever is on it.
+- **Hardware tests need the owner** at the printers: ask them to switch the
+  printer on (the D30 sleeps; a phone connected to it hides it), then ask what
+  came out. Don't claim a D30 print worked — it sends no confirmation.
+- On the lab Pi: prefer `sudo` for one-off Bluetooth commands over changing
+  group membership; a Bluetooth **keyboard** is paired to it — never
+  `remove`, power off Bluetooth, or restart `bluetoothd`.
+- The owner is a C#/JS developer: explain Python idioms briefly, keep code
+  plain.
 
 ## Out of scope — don't build these
 
