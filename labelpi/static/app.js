@@ -406,7 +406,7 @@ function newElement(kind, changes = {}) {
 }
 
 const NEW_TEMPLATE_LAYOUT = {
-  tape_length_mm: 40,
+  tape_length_mm: null, // null = auto: as long as the text needs
   background: { fill: "white", frame: "none", frame_mm: 0.4, radius_mm: 1.5, image: null },
   elements: [
     newElement("text", { x: 0, y: 0, w: 100, h: 60 }),
@@ -446,7 +446,9 @@ function bindTemplateEditor() {
     layoutChanged();
   });
   $("tpl-length").addEventListener("input", () => {
-    state.editing.layout.tape_length_mm = numberOr($("tpl-length").value, 40);
+    // Empty = auto length.
+    const value = $("tpl-length").value.trim();
+    state.editing.layout.tape_length_mm = value === "" ? null : numberOr(value, null);
     layoutChanged();
   });
 
@@ -508,7 +510,7 @@ function fillEditor() {
   $("bg-fill").value = bg.fill || "white";
   $("bg-frame").value = bg.frame || "none";
   $("bg-frame-mm").value = bg.frame_mm ?? 0.4;
-  $("tpl-length").value = layout.tape_length_mm ?? 40;
+  $("tpl-length").value = layout.tape_length_mm ?? "";
   renderBackgroundImage();
   renderElements();
 }

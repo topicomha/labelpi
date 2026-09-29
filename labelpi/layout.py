@@ -2,7 +2,7 @@
 Layout templates: a background plus a list of elements drawn on top of it.
 
     {
-      "tape_length_mm": 40,                 # label length on continuous tape
+      "tape_length_mm": null,               # on tape: null = as long as the text needs
       "background": {"fill": "white", "frame": "rounded", "frame_mm": 0.4},
       "elements": [
         {"type": "icon", "x": 0, "y": 0, "w": 25, "h": 100, "icon": "fa-solid:snowflake"},
@@ -25,6 +25,7 @@ render_layout() draws it - the same function for preview and print.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
     from labelpi.config import LabelConfig
 
 MAX_ELEMENTS = 40
-DEFAULT_TAPE_LENGTH_MM = 40.0
+MIN_AUTO_LENGTH_MM = 25.0  # auto-length tape labels are never shorter than this
 COLORS = ("black", "white")
 FILLS = ("none", "black", "white")
 FRAMES = ("none", "line", "rounded", "double")
@@ -105,7 +106,10 @@ def normalise_layout(
         raise TemplateError("layout must be an object")
     _no_unknown_keys(data, {"tape_length_mm", "background", "elements"}, "layout")
 
-    tape_length = _number(data, "tape_length_mm", DEFAULT_TAPE_LENGTH_MM, 5, 400, "layout")
+    # None = auto: on tape, the label grows to fit its text (see _auto_length_mm).
+    tape_length = data.get("tape_length_mm")
+    if tape_length is not None:
+        tape_length = _number(data, "tape_length_mm", 0, 5, 400, "layout")
     background = _normalise_background(data.get("background") or {}, asset_exists)
 
     elements = data.get("elements", [])
@@ -303,10 +307,13 @@ def render_layout(
 ) -> Image.Image:
     """
     Draw a (normalised) layout as a 1-bit image for `label`. On continuous
-    tape the length is `length_mm`, else the layout's tape_length_mm.
+    tape the length is `length_mm`, else the layout's tape_length_mm, else
+    as long as its text needs (auto).
     """
     if label.continuous and length_mm is None:
         length_mm = layout["tape_length_mm"]
+        if length_mm is None:
+            length_mm = _auto_length_mm(layout, label, dpi, now, fields)
     canvas = canvas_for(label, dpi, length_mm)
     assert canvas.width is not None  # layouts always have a length
     image = Image.new("L", (canvas.width, canvas.height), 255)
@@ -323,6 +330,38 @@ def render_layout(
         except RenderError as exc:
             raise RenderError(f"element {n} ({element['type']}): {exc}") from None
     return to_one_bit(image)
+
+
+def _auto_length_mm(
+    layout: dict[str, Any], label: LabelConfig, dpi: int, now: datetime, fields: dict[str, str]
+) -> float:
+    """
+    How long a tape label must be for its text: each text element at the
+    largest size its box's *height* allows (and its size_mm cap), with the
+    box's share of the length (w %) just wide enough for it. Icons, pictures
+    and shapes don't push the length - they scale into their boxes, since
+    their width is a % of the very length being worked out. Never shorter
+    than MIN_AUTO_LENGTH_MM, so short text keeps the layout's proportions.
+    """
+    px_per_mm = dpi / 25.4
+    band = label.print_height_px
+    needed_px = MIN_AUTO_LENGTH_MM * px_per_mm - 2 * round(label.margin_mm * px_per_mm)
+    for element in layout["elements"]:
+        if element["type"] != "text":
+            continue
+        lines = fill_template(element["text"], now, fields).split("\n")
+        if not any(line.strip() for line in lines):
+            continue
+        box_height = round(band * element["h"] / 100)
+        max_size = round(element["size_mm"] * px_per_mm) if element["size_mm"] else 0
+        try:
+            block = largest_font(lines, None, box_height, element["font"], max_size)
+        except RenderError:
+            continue  # too short for any text; drawing it will report that
+        # +2 px: pixel boxes are rounded, and the text must still fit after that.
+        needed_px = max(needed_px, (block.width + 2) * 100 / element["w"])
+    margins = 2 * round(label.margin_mm * px_per_mm)
+    return (math.ceil(needed_px) + margins) / px_per_mm
 
 
 def _draw_background(

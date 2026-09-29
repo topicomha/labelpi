@@ -41,7 +41,7 @@ def black_pixels(image: Image.Image) -> int:
 # --- normalising -----------------------------------------------------------------
 def test_defaults_are_filled_in():
     layout = normalise_layout({"elements": [text()]})
-    assert layout["tape_length_mm"] == 40
+    assert layout["tape_length_mm"] is None  # auto
     assert layout["background"] == {
         "fill": "white",
         "frame": "none",
@@ -137,11 +137,50 @@ def test_fields_and_assets():
 def test_size_and_mode(die_label, tape_label):
     image = render({"elements": [text()]}, die_label)
     assert image.size == (400, 96) and image.mode == "1"
-    # Tape: band height, length from tape_length_mm (or the request).
+    # Tape: band height, length from tape_length_mm (or the request, or auto).
     tape = render({"elements": [text()], "tape_length_mm": 30}, tape_label, TAPE_DPI)
     assert tape.size == (round(30 * TAPE_DPI / 25.4), 64)
     tape = render({"elements": [text()]}, tape_label, TAPE_DPI, length_mm=50)
     assert tape.width == round(50 * TAPE_DPI / 25.4)
+
+
+def test_auto_length_on_tape_grows_with_the_text(tape_label):
+    px_per_mm = TAPE_DPI / 25.4
+    short = render({"elements": [text(text="Hi")]}, tape_label, TAPE_DPI)
+    long = render(
+        {"elements": [text(text="Chicken and leek soup, 2 portions")]}, tape_label, TAPE_DPI
+    )
+    assert short.width == pytest.approx(25 * px_per_mm, abs=1)  # the minimum
+    assert long.width > 2 * short.width
+    # The long text got the full height of its box: as big as on a fixed long label.
+    fixed = render(
+        {"elements": [text(text="Chicken and leek soup, 2 portions")], "tape_length_mm": 300},
+        tape_label,
+        TAPE_DPI,
+    )
+    assert black_pixels(long) == pytest.approx(black_pixels(fixed), rel=0.1)
+
+
+def test_auto_length_follows_the_text_box_share(tape_label):
+    """Text in a box 50 % long needs a label twice as long as at 100 %."""
+    words = "A fairly long line of text"
+    full = render({"elements": [text(text=words)]}, tape_label, TAPE_DPI)
+    half = render({"elements": [text(text=words, w=50)]}, tape_label, TAPE_DPI)
+    margins = 2 * round(2 * TAPE_DPI / 25.4)
+    assert half.width - margins == pytest.approx(2 * (full.width - margins), abs=6)
+
+
+def test_auto_length_uses_the_fields(tape_label):
+    layout = {"elements": [text(text="{field:Item}")]}
+    empty = render(layout, tape_label, TAPE_DPI)
+    filled = render(layout, tape_label, TAPE_DPI, fields={"Item": "Beef stew with dumplings"})
+    assert filled.width > empty.width
+
+
+def test_fixed_length_and_die_cut_ignore_auto(tape_label, die_label):
+    layout = {"elements": [text(text="A long line of text for sure")], "tape_length_mm": 30}
+    assert render(layout, tape_label, TAPE_DPI).width == round(30 * TAPE_DPI / 25.4)
+    assert render({"elements": [text(text="x" * 40)]}, die_label).size == (400, 96)
 
 
 def test_filled_rect_covers_its_box(die_label):
