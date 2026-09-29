@@ -12,6 +12,7 @@ Errors are JSON: {"error": "<kind>", "detail": "<human-readable>"}.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -21,7 +22,7 @@ from typing import Any
 from flask import Blueprint, Response, current_app, jsonify, request, send_file
 from PIL import Image, UnidentifiedImageError
 
-from labelpi import icons
+from labelpi import icons, transfer
 from labelpi.app import AppState
 from labelpi.assets import AssetError
 from labelpi.config import LabelConfig
@@ -152,6 +153,54 @@ def create_template():
         )
     )
     return jsonify(_template_json(template)), 201
+
+
+@api.get("/templates/export")
+def export_templates():
+    """
+    Download templates as a JSON file (pictures included), for backup or for
+    another labelpi. ?id=freezer&id=food picks some; default: all.
+    """
+    templates = _state().settings.templates()
+    wanted = request.args.getlist("id")
+    if wanted:
+        unknown = sorted(set(wanted) - {t.id for t in templates})
+        if unknown:
+            raise not_found(f"unknown template(s): {', '.join(unknown)}")
+        templates = [t for t in templates if t.id in wanted]
+    data = transfer.export_templates(templates, _state().assets)
+    response = jsonify(data)
+    filename = f"labelpi-templates-{datetime.now():%Y%m%d-%H%M}.json"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api.post("/templates/import")
+def import_templates():
+    """
+    Add the templates from an export file: multipart "file" (the page) or the
+    file's JSON as the body (scripts). All or nothing; existing templates are
+    never replaced - a name that's taken just gets a new id, and a template
+    identical to one already here is skipped (listed in "skipped").
+    """
+    if request.is_json:
+        data = _json_body()
+    else:
+        upload = request.files.get("file")
+        if upload is None or not upload.filename:
+            raise bad_request('send the export file as "file" (multipart) or as a JSON body')
+        try:
+            data = json.loads(upload.read().decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise bad_request("that file isn't JSON - pick a labelpi templates file") from None
+    settings = _state().settings
+    try:
+        items = transfer.read_import(data, _state().assets)
+        added, skipped = settings.import_templates(items)
+    except (TemplateError, AssetError) as exc:
+        raise bad_request(str(exc)) from None
+    log.info("imported %d template(s), skipped %d identical", len(added), len(skipped))
+    return jsonify(imported=[_template_json(t) for t in added], skipped=skipped), 201
 
 
 @api.put("/templates/<template_id>")

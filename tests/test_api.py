@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from datetime import datetime
 
 import pytest
@@ -576,3 +577,130 @@ def test_image_upload_can_chain(client, registry):
     }
     response = client.post("/api/print/image", data=form, content_type="multipart/form-data")
     assert response.get_json()["fed"] is False
+
+
+# --- template export / import -------------------------------------------------------------
+def export(client, *ids):
+    query = "&".join(f"id={i}" for i in ids)
+    return client.get("/api/templates/export" + (f"?{query}" if query else ""))
+
+
+def import_json(client, data):
+    return client.post("/api/templates/import", json=data)
+
+
+def test_export_all_and_some(client):
+    response = export(client)
+    assert response.status_code == 200
+    assert "attachment" in response.headers["Content-Disposition"]
+    data = response.get_json()
+    assert data["format"] == "labelpi-templates" and data["version"] == 1
+    names = [t["name"] for t in data["templates"]]
+    assert names[:2] == ["today", "Opened"]  # "today" comes from the test config
+    assert data["templates"][0] == {"name": "today", "text": "{date:%Y-%m-%d}"}
+    assert data["pictures"] == {}
+    some = export(client, "freezer", "food").get_json()
+    assert [t["name"] for t in some["templates"]] == ["Food", "Freezer"]
+    assert_error(export(client, "nope"), 404, "not_found")
+
+
+def test_reimporting_a_backup_skips_identical_templates(client):
+    before = client.get("/api/templates").get_json()
+    response = import_json(client, export(client).get_json())
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()
+    assert body["imported"] == [] and len(body["skipped"]) == len(before)
+    assert client.get("/api/templates").get_json() == before
+
+
+def test_import_same_name_different_design_is_added(client):
+    data = export(client, "freezer").get_json()
+    data["templates"][0]["layout"]["background"]["frame"] = "line"
+    response = import_json(client, data)
+    assert response.status_code == 201, response.get_json()
+    [added] = response.get_json()["imported"]
+    assert added["id"] == "freezer-2" and added["name"] == "Freezer"
+
+
+def test_export_import_round_trip_with_a_picture(client):
+    asset = upload_asset(client).get_json()
+    layout = {
+        "background": {"image": {"asset": asset["id"]}},
+        "elements": [{"type": "image", "asset": asset["id"], "w": 30}],
+    }
+    client.post("/api/templates", json={"name": "Logo", "layout": layout})
+    data = export(client, "logo").get_json()
+    assert list(data["pictures"]) == [asset["id"]]
+
+    # Start clean: no template, no picture - the file must carry everything.
+    client.delete("/api/templates/logo")
+    client.delete(asset["url"])
+    response = import_json(client, data)
+    assert response.status_code == 201, response.get_json()
+    [added] = response.get_json()["imported"]
+    stored = {a["id"] for a in client.get("/api/assets").get_json()}
+    assert added["layout"]["elements"][0]["asset"] in stored
+    assert added["layout"]["background"]["image"]["asset"] in stored
+    assert preview(client, template=added["id"]).status_code == 200
+
+
+def test_import_from_an_uploaded_file(client):
+    data = json.dumps(export(client, "opened").get_json()).encode()
+    form = {"file": (io.BytesIO(data), "labelpi-templates.json")}
+    response = client.post("/api/templates/import", data=form, content_type="multipart/form-data")
+    assert response.status_code == 201, response.get_json()
+    bad = {"file": (io.BytesIO(b"\x89PNG not json"), "x.json")}
+    response = client.post("/api/templates/import", data=bad, content_type="multipart/form-data")
+    assert_error(response, 400, "bad_request")
+
+
+@pytest.mark.parametrize(
+    "data, detail",
+    [
+        ({"templates": []}, "isn't a labelpi templates file"),
+        ({"format": "labelpi-templates", "version": 9, "templates": []}, "version 9"),
+        ({"format": "labelpi-templates", "version": 1, "templates": []}, "no templates"),
+        (
+            {"format": "labelpi-templates", "version": 1, "templates": [{"name": "X"}]},
+            "template 1 ('X')",
+        ),
+        (
+            {
+                "format": "labelpi-templates",
+                "version": 1,
+                "templates": [
+                    {"name": "Fine", "text": "ok"},
+                    {"name": "Bad", "layout": {"elements": [{"type": "blob"}]}},
+                ],
+            },
+            "template 2 ('Bad')",
+        ),
+        (
+            {
+                "format": "labelpi-templates",
+                "version": 1,
+                "templates": [
+                    {"name": "P", "layout": {"elements": [{"type": "image", "asset": "a"}]}}
+                ],
+            },
+            "doesn't include it",
+        ),
+        (
+            {
+                "format": "labelpi-templates",
+                "version": 1,
+                "templates": [
+                    {"name": "P", "layout": {"elements": [{"type": "image", "asset": "a"}]}}
+                ],
+                "pictures": {"a": "not base64!"},
+            },
+            "broken",
+        ),
+    ],
+)
+def test_import_errors_add_nothing(client, data, detail):
+    before = client.get("/api/templates").get_json()
+    response = import_json(client, data)
+    assert_error(response, 400, "bad_request")
+    assert detail in response.get_json()["detail"]
+    assert client.get("/api/templates").get_json() == before

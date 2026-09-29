@@ -172,7 +172,16 @@ input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px
 .template-fields { display: grid; gap: 10px; }
 .template-fields:empty { display: none; }
 
-.template-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.template-actions { display: grid; gap: 4px; }
+.action-row { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+a.link, .file-link {
+  font-size: 0.9rem;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.file-link input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .template-actions[hidden] { display: none; }
 button.link {
   font: inherit;

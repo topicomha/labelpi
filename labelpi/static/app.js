@@ -254,6 +254,7 @@ function markSelectedTemplate() {
     button.setAttribute("aria-pressed", String(button.dataset.id === highlighted));
   }
   $("tpl-edit").disabled = !currentTemplate();
+  $("tpl-duplicate").disabled = !currentTemplate();
   $("template-actions").hidden = Boolean(state.editing);
 }
 
@@ -420,6 +421,12 @@ function bindTemplateEditor() {
     if (template) openEditor(template.id, template.name, layoutOf(template));
   });
   $("tpl-new").addEventListener("click", () => openEditor(null, "", clone(NEW_TEMPLATE_LAYOUT)));
+  $("tpl-duplicate").addEventListener("click", () => {
+    // A copy opens as a new, unsaved template: change it, then Save.
+    const template = currentTemplate();
+    if (template) openEditor(null, `${template.name} copy`.slice(0, 40), layoutOf(template));
+  });
+  $("tpl-import").addEventListener("change", importTemplates);
   $("tpl-cancel").addEventListener("click", () => {
     closeEditor();
     renderFieldInputs();
@@ -947,6 +954,30 @@ async function deleteTemplate() {
   if (!response || !response.ok) return showEditorMessage("Couldn't delete the template.");
   await reloadTemplates(null);
   setStatus(`Deleted template "${template.name}"`, "ok");
+}
+
+// Import an export file: its templates are added next to the existing ones.
+async function importTemplates() {
+  const input = $("tpl-import");
+  const file = input.files[0];
+  input.value = ""; // so picking the same file again still triggers "change"
+  if (!file) return;
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch("/api/templates/import", { method: "POST", body: form }).catch(
+    () => null,
+  );
+  if (!response) return setStatus("Can't reach labelpi - is the Pi on?", "error");
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) return setStatus(`Import failed: ${body.detail || response.status}`, "error");
+  const added = body.imported;
+  await reloadTemplates(added.length ? added[0].id : null);
+  const plural = (n) => `${n} template${n === 1 ? "" : "s"}`;
+  let message = added.length
+    ? `Imported ${plural(added.length)}: ${added.map((t) => t.name).join(", ")}`
+    : "Nothing new to import";
+  if (body.skipped.length) message += ` (${plural(body.skipped.length)} already here)`;
+  setStatus(message, "ok");
 }
 
 async function reloadTemplates(selectId) {
