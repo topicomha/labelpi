@@ -13,6 +13,7 @@ backend's job (Printer.prepare), never this module's.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,14 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 if TYPE_CHECKING:  # only for type hints; avoids a circular import at runtime
     from labelpi.config import LabelConfig
 
-FONT_PATH = Path(__file__).parent / "fonts" / "DejaVuSans-Bold.ttf"
+FONTS_DIR = Path(__file__).parent / "fonts"
+# Fonts a layout's text can use. "bold" is the default everywhere.
+FONTS = {
+    "bold": FONTS_DIR / "DejaVuSans-Bold.ttf",
+    "regular": FONTS_DIR / "DejaVuSans.ttf",
+    "condensed": FONTS_DIR / "DejaVuSansCondensed-Bold.ttf",  # narrow: more text per line
+}
+FONT_PATH = FONTS["bold"]
 MIN_FONT_PX = 6  # below this, text isn't readable on a thermal printer
 LINE_GAP = 0.15  # space between lines, as a fraction of the font size
 MAX_CONTINUOUS_PX = 3000  # sanity cap for tape length (~42 cm at 180 dpi)
@@ -94,9 +102,13 @@ def _check_length(width_px: int) -> None:
 # ---------------------------------------------------------------------------
 # Text
 # ---------------------------------------------------------------------------
-def load_font(size: int) -> ImageFont.FreeTypeFont:
-    """The bundled font, so rendering is identical on every machine."""
-    return ImageFont.truetype(str(FONT_PATH), size)
+@lru_cache(maxsize=64)
+def load_font(size: int, font: str = "bold") -> ImageFont.FreeTypeFont:
+    """
+    A bundled font, so rendering is identical on every machine. Cached:
+    fitting text tries many sizes, and opening a TTF is slow on a Pi Zero.
+    """
+    return ImageFont.truetype(str(FONTS[font]), size)
 
 
 @dataclass(frozen=True)
@@ -116,8 +128,8 @@ class _TextBlock:
         return n * self.line_height + (n - 1) * self.gap
 
 
-def _measure(lines: list[str], size: int) -> _TextBlock:
-    font = load_font(size)
+def _measure(lines: list[str], size: int, font_name: str = "bold") -> _TextBlock:
+    font = load_font(size, font_name)
     ascent, descent = font.getmetrics()
     widths = tuple(round(font.getlength(line)) for line in lines)
     return _TextBlock(font, widths, ascent + descent, round(size * LINE_GAP))
@@ -127,23 +139,28 @@ def _fits(block: _TextBlock, max_w: int | None, max_h: int) -> bool:
     return block.height <= max_h and (max_w is None or block.width <= max_w)
 
 
-def _largest_font(lines: list[str], max_w: int | None, max_h: int) -> _TextBlock:
+def largest_font(
+    lines: list[str], max_w: int | None, max_h: int, font_name: str = "bold", max_size: int = 0
+) -> _TextBlock:
     """
     Binary search for the biggest font size whose text block fits.
 
     Bigger font -> bigger block, always, so the search is valid. Upper bound:
-    a font can't be taller than the space it has to fit in.
+    a font can't be taller than the space it has to fit in (or than
+    `max_size`, if given).
     """
     low, high = MIN_FONT_PX, max(MIN_FONT_PX, max_h)
-    if not _fits(_measure(lines, low), max_w, max_h):
+    if max_size:
+        high = max(low, min(high, max_size))
+    if not _fits(_measure(lines, low, font_name), max_w, max_h):
         raise RenderError("text doesn't fit on this label, even at the smallest font size")
     while low < high:
         mid = (low + high + 1) // 2  # round up so the loop always moves
-        if _fits(_measure(lines, mid), max_w, max_h):
+        if _fits(_measure(lines, mid, font_name), max_w, max_h):
             low = mid
         else:
             high = mid - 1
-    return _measure(lines, low)
+    return _measure(lines, low, font_name)
 
 
 def render_text(
@@ -170,7 +187,7 @@ def render_text(
     max_w, max_h = canvas.inner_width, canvas.inner_height
 
     if font_size is None:
-        block = _largest_font(lines, max_w, max_h)
+        block = largest_font(lines, max_w, max_h)
     else:
         if font_size < MIN_FONT_PX:
             raise RenderError(f"font_size must be at least {MIN_FONT_PX}")
@@ -183,18 +200,38 @@ def render_text(
     image = Image.new("L", (width, canvas.height), 255)
     draw = ImageDraw.Draw(image)
 
-    y = (canvas.height - block.height) // 2
+    draw_text_block(
+        draw, lines, block, (canvas.margin, 0, width - canvas.margin, canvas.height), align
+    )
+    return to_one_bit(image)
+
+
+def draw_text_block(
+    draw: ImageDraw.ImageDraw,
+    lines: list[str],
+    block: _TextBlock,
+    box: tuple[int, int, int, int],
+    align: str = "center",
+    valign: str = "middle",
+    fill: int = 0,
+) -> None:
+    """Draw measured lines inside box (left, top, right, bottom)."""
+    left, top, right, bottom = box
+    if valign == "top":
+        y = top
+    elif valign == "bottom":
+        y = bottom - block.height
+    else:
+        y = top + (bottom - top - block.height) // 2
     for line, line_width in zip(lines, block.line_widths, strict=True):
         if align == "left":
-            x = canvas.margin
+            x = left
         elif align == "right":
-            x = width - canvas.margin - line_width
+            x = right - line_width
         else:
-            x = (width - line_width) // 2
-        draw.text((x, y), line, font=block.font, fill=0)  # anchor: top-left of ascender
+            x = left + (right - left - line_width) // 2
+        draw.text((x, y), line, font=block.font, fill=fill)  # anchor: top-left of ascender
         y += block.line_height + block.gap
-
-    return to_one_bit(image)
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +307,7 @@ def fit_image(
     it needs to be.
     """
     canvas = canvas_for(label, dpi, length_mm)
-    grey = _flatten_to_grey(source)
+    grey = flatten_to_grey(source)
     if invert:
         grey = ImageOps.invert(grey)
 
@@ -292,7 +329,7 @@ def fit_image(
     return to_one_bit(result)
 
 
-def _flatten_to_grey(source: Image.Image) -> Image.Image:
+def flatten_to_grey(source: Image.Image) -> Image.Image:
     """Apply EXIF rotation (phone photos), put transparency on white, go greyscale."""
     image = ImageOps.exif_transpose(source)
     if image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info):

@@ -32,7 +32,8 @@ keep the Python plain, explicit and well-commented.
   Vanilla JS, no frameworks, no bundler, no CDN dependencies (the Pi may be
   offline-ish; serve everything locally).
 - **No queue, no database, no background workers.** (Settings saved from the
-  page go in one JSON file, `config/settings.json` — not a database.) Each printer has its own
+  page go in one JSON file, `config/settings.json`, and uploaded pictures are
+  plain PNG files in `config/assets/` — not a database.) Each printer has its own
   in-memory lock. If a printer is busy, the API returns `409 Busy` immediately.
   The two printers are independent — one can print while the other is busy.
 - **Config is TOML, read with the stdlib `tomllib`** (Python ≥ 3.11). No YAML.
@@ -49,7 +50,11 @@ labelpi/
   api.py            # /api blueprint — all endpoints
   config.py         # load + validate config/printers.toml
   render.py         # text -> image, fit image to label
-  templates.py      # template syntax: {field:..}, {date+3d:..}; starter templates
+  templates.py      # template syntax: {field:..}, {date+3d:..}; Template (text or layout)
+  layout.py         # layout templates: background + positioned elements; check + draw
+  starters.py       # the built-in starter templates
+  icons.py          # bundled icon fonts: search, draw an icon into a box
+  assets.py         # pictures uploaded for layouts (config/assets/*.png)
   settings.py       # config/settings.json: what the page saves (templates, ...)
   printers/
     __init__.py     # registry: build printers from config, per-printer locks
@@ -57,8 +62,9 @@ labelpi/
     brother.py      # PT-P300BT backend (our own raster encoder)
     phomemo.py      # Phomemo D30 backend (ESC/POS raster over BLE)
     mock.py         # writes PNGs to ./out/ instead of printing
-  vendor/           # vendored third-party printer code, with LICENSE files
-  fonts/            # bundled DejaVuSans-Bold.ttf (deterministic rendering)
+  vendor/           # third-party files with their LICENSE files: icon fonts
+                    # (fontawesome/, tabler/, mdi/) + icons.json index
+  fonts/            # bundled DejaVu Sans fonts (deterministic rendering)
   static/
     index.html
     app.js
@@ -71,6 +77,8 @@ deploy/
   labelpi.service   # systemd unit
   labelpi.sudoers   # allows the deploy user to restart the service only
 tests/
+tools/
+  build_icon_index.py  # dev only: rebuilds labelpi/vendor/icons.json
 docs/
   SPEC.md
   PI_SETUP.md
@@ -192,6 +200,8 @@ config — use this for local dev and in tests. `LABELPI_CONFIG` and
 
 ## Out of scope — don't build these
 
-Label designer / WYSIWYG layout, job queue or history,
+Drag-and-drop / WYSIWYG label designer (layouts are edited as a list of
+elements with typed positions and a live preview — keep it that way), job
+queue or history,
 user accounts, barcode/QR generation (maybe later), USB printing, multiple
 copies in one request (callers can loop).

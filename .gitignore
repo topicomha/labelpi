@@ -29,3 +29,6 @@ Thumbs.db
 
 # Old copy of the original docs, superseded by the files in the repo.
 labelpi-docs.zip
+
+# Images uploaded from the page for template layouts.
+config/assets/

@@ -24,6 +24,7 @@ import calendar
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 
 from labelpi.render import RenderError
 
@@ -40,12 +41,23 @@ class TemplateError(RenderError):
 
 @dataclass(frozen=True)
 class Template:
+    """
+    A saved template. Either plain `text` (every line centred, as large as
+    fits - the original kind, still used by printers.toml and scripts) or a
+    `layout` (background + positioned elements, see layout.py) - never both.
+    """
+
     id: str
     name: str
-    text: str
+    text: str = ""
+    layout: dict[str, Any] | None = None
 
     @property
     def fields(self) -> list[str]:
+        if self.layout is not None:
+            from labelpi.layout import layout_fields  # here to avoid a circular import
+
+            return layout_fields(self.layout)
         return template_fields(self.text)
 
 
@@ -125,14 +137,3 @@ def shift_date(when: datetime, n: int, unit: str) -> datetime:
     month = month_index + 1
     day = min(when.day, calendar.monthrange(year, month)[1])
     return when.replace(year=year, month=month, day=day)
-
-
-# Ready-made templates a fresh install starts with (config [[templates]] and
-# anything saved from the page come on top). Keep them short: labels are small.
-STARTER_TEMPLATES = (
-    Template("today", "Today's date", "{date:%d %b %Y}"),
-    Template("opened", "Opened", "Opened\n{date:%d %b %Y}"),
-    Template("food", "Food", "{field:Food}\nMade {date:%d %b}\nUse by {date+3d:%d %b}"),
-    Template("freezer", "Freezer", "{field:Item}\nFrozen {date:%d %b %Y}\nUse by {date+3m:%b %Y}"),
-    Template("container", "Container", "{field:Contents}\n{date:%d %b %Y}"),
-)
