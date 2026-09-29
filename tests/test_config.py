@@ -12,7 +12,7 @@ def test_example_config_is_valid():
     assert [p.id for p in config.printers] == ["brother", "d30"]
     assert config.printer("brother").label("tze-12").print_height_px == 64
     assert config.printer("d30").label("12x40").continuous is False
-    assert config.shortcut("today") is not None
+    assert [t.id for t in config.templates] == ["leftovers"]
 
 
 def test_minimal_config_values(config):
@@ -27,7 +27,6 @@ def test_minimal_config_values(config):
 def test_lookups_return_none_for_unknown_ids(config):
     assert config.printer("nope") is None
     assert config.printer("tape").label("nope") is None
-    assert config.shortcut("nope") is None
 
 
 def _error(write_config, text: str) -> str:
@@ -140,16 +139,16 @@ def test_bad_id_characters(write_config):
     assert "must be letters, digits" in _error(write_config, text)
 
 
-def test_shortcut_with_unknown_placeholder(write_config):
+def test_template_with_unknown_placeholder(write_config):
     text = MINIMAL_TOML.replace("{date:%Y-%m-%d}", "{dat:%Y}")
     message = _error(write_config, text)
-    assert 'shortcuts[0] (id "today")' in message
+    assert 'templates[0] (id "today")' in message
     assert "unknown placeholder" in message
 
 
-def test_duplicate_shortcut_id(write_config):
-    text = MINIMAL_TOML + '\n[[shortcuts]]\nid = "today"\ntext = "x"\n'
-    assert 'duplicate shortcut id "today"' in _error(write_config, text)
+def test_duplicate_template_id(write_config):
+    text = MINIMAL_TOML + '\n[[templates]]\nid = "today"\ntext = "x"\n'
+    assert 'duplicate template id "today"' in _error(write_config, text)
 
 
 def test_server_section(write_config):

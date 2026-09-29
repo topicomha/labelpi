@@ -93,7 +93,7 @@ select:focus, textarea:focus, button:focus-visible, .dropzone:focus-within {
   outline-offset: 1px;
 }
 
-/* Segmented control (Text | Image | Shortcuts, and alignment) */
+/* Segmented control (Text | Image | Templates, and alignment) */
 .segmented {
   display: flex;
   background: var(--bg);
@@ -141,9 +141,9 @@ select:focus, textarea:focus, button:focus-visible, .dropzone:focus-within {
 .toggles { display: flex; flex-wrap: wrap; gap: 16px; }
 .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
-/* Shortcut buttons */
-.shortcuts { display: flex; flex-wrap: wrap; gap: 8px; }
-.shortcuts button {
+/* Template buttons */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips button {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -152,11 +152,71 @@ select:focus, textarea:focus, button:focus-visible, .dropzone:focus-within {
   padding: 8px 14px;
   cursor: pointer;
 }
-.shortcuts button[aria-pressed="true"] {
+.chips button[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-text);
 }
+
+input[type="text"] {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.template-fields { display: grid; gap: 10px; }
+.template-fields:empty { display: none; }
+
+.template-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.template-actions[hidden] { display: none; }
+button.link {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+}
+button.link:disabled { color: var(--muted); cursor: default; }
+
+/* Template editor */
+.editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.editor[hidden] { display: none; }
+.editor textarea, .editor input[type="text"] {
+  background: var(--card);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.editor input[type="text"] { font-family: inherit; }
+.help { font-size: 0.85rem; color: var(--muted); }
+.help summary { cursor: pointer; }
+.help ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.help code { color: var(--text); }
+.editor-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.editor-buttons button {
+  font: inherit;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.editor-buttons button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.editor-buttons button.danger { margin-left: auto; color: var(--error); }
+.editor-buttons button[hidden] { display: none; }
 
 /* Preview */
 .preview {

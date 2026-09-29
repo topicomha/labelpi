@@ -13,11 +13,13 @@ from scripts, without a phone, via a small service on a Pi Zero W on the LAN.
 1. **Print text** — one or more lines (`\n` separates lines), auto-sized to fit.
 2. **Print an image** — upload PNG/JPEG/GIF/BMP; it is scaled to fit the chosen
    label and converted to black and white.
-3. **Shortcuts** — one-click predefined labels (e.g. today's date), defined in
-   config.
+3. **Templates** — ready-made labels with blanks to fill in and dates worked
+   out for you (e.g. Freezer: *item*, frozen *today*, use by *today + 3
+   months*). Starters are built in; add, edit and delete them on the page.
+   See §12.
 4. **Preview** — any of the above can be previewed as a PNG instead of printed.
-5. **Label sizes** — per-printer lists in config; the UI only shows sizes that
-   belong to the selected printer.
+5. **Label sizes** — per-printer lists; the UI only shows sizes that belong to
+   the selected printer. Managing them from the page is Milestone 9.
 6. **Busy handling** — one job per printer at a time; a second request to a busy
    printer gets `409` immediately. Printers are independent of each other.
 7. **Printer setup from the UI** (Milestone 7) — find and pair printers, and
@@ -39,10 +41,11 @@ Rules:
   calibration, §11).
 - Label and printer `id`s must be unique; validation fails loudly at startup
   with a clear message (file, printer, field).
-- Shortcut text supports `{date:<strftime>}` and `{time:<strftime>}` only. No
-  arbitrary code or format fields.
+- `[[templates]]` (optional) adds templates to the built-in starters; the same
+  `id` replaces a starter. They only seed the list — see §12.
 - `config/printers.toml` is gitignored (it holds MAC addresses); the
-  `.example.toml` is committed.
+  `.example.toml` is committed. `config/settings.json` (written by the page)
+  is gitignored too.
 
 ## 4. Rendering (`render.py`)
 
@@ -80,10 +83,17 @@ previews (PNG).
    "labels": [{ "id": "tze-12", "name": "12 mm tape", "continuous": true }] }]
 ```
 
-### `GET /api/shortcuts`
-```json
-[{ "id": "today", "name": "Today's date" }]
+### Templates
 ```
+GET    /api/templates           -> [{ "id": "freezer", "name": "Freezer",
+                                      "text": "{field:Item}\nFrozen {date:%d %b %Y}\n...",
+                                      "fields": ["Item"] }]
+POST   /api/templates           { "name": "Jar", "text": "{field:Contents}" } -> 201 + template
+PUT    /api/templates/<id>      { "name": "...", "text": "..." }             -> template
+DELETE /api/templates/<id>                                                   -> 204
+```
+Bad template text or name → `400`; unknown id → `404`. New ids come from the
+name (`"Freezer bag"` → `freezer-bag`, `freezer-bag-2` if taken).
 
 ### `POST /api/print/text`
 ```json
@@ -94,10 +104,14 @@ previews (PNG).
 ### `POST /api/print/image` — `multipart/form-data`
 Fields: `printer`, `label`, `file`, optional `dither`, `invert`, `length_mm`.
 
-### `POST /api/print/shortcut`
+### `POST /api/print/template`
 ```json
-{ "printer": "d30", "label": "12x40", "shortcut": "today" }
+{ "printer": "d30", "label": "12x40", "template": "freezer",
+  "fields": { "Item": "Chicken soup" }, "align": "center" }
 ```
+Instead of `"template": id`, `"text": "<template text>"` prints/previews an
+unsaved template (the page's editor uses this for its live preview). Missing
+fields print as blank lines.
 
 ### Preview
 Add `?preview=1` to any `print/*` endpoint → `200 image/png` of exactly what
@@ -109,7 +123,7 @@ would be sent to the printer (after `prepare()`), nothing printed. Preview does
 |---|---|---|
 | `200` | printed | `{"status": "printed", "printer": "...", "ms": 4210}` |
 | `400` | bad input, text doesn't fit, bad image | `{"error": "bad_request", "detail": "..."}` |
-| `404` | unknown printer/label/shortcut | `{"error": "not_found", "detail": "..."}` |
+| `404` | unknown printer/label/template | `{"error": "not_found", "detail": "..."}` |
 | `409` | printer busy | `{"error": "busy", "detail": "brother is printing"}` |
 | `413` | upload too large | `{"error": "too_large", "detail": "..."}` |
 | `503` | printer off / out of range / connection timeout | `{"error": "unavailable", "detail": "..."}` |
@@ -134,10 +148,13 @@ curl -X POST http://labelpi.lan:8080/api/print/image \
 One page, responsive from ~360 px phone width up to desktop.
 
 - Printer selector (shows busy state) → label selector filtered by printer.
-- Segmented control: **Text | Image | Shortcuts**.
+- Segmented control: **Text | Image | Templates**.
   - Text: textarea, align buttons.
   - Image: file picker (plus drag-drop on desktop), dither/invert toggles.
-  - Shortcuts: one button per configured shortcut.
+  - Templates: one button per template; a text box for each `{field:...}`;
+    "Edit this template" / "+ New template" open an editor (name, text,
+    syntax help, Save / Cancel / Delete) whose text previews live.
+    Picking a template selects and previews it; Print prints it.
 - Live preview image, refreshed (debounced ~400 ms) from `?preview=1`.
 - **Print** button, disabled while a request is in flight.
 - Plain-English status line: "Printed", "Brother is busy — try again in a
@@ -195,6 +212,12 @@ it from its device list).
 5. Real Phomemo backend (small in-house ESC/POS encoder + BLE via `bleak`).
 6. Deploy script, systemd unit, Pi setup doc verified end to end.
 7. Printer setup from the UI: discovery, pairing, calibration (§11).
+8. Templates with fill-in fields and date maths, editable on the page (§12)
+   — **done**.
+9. Label sizes managed from the page, per printer (saved in settings.json).
+
+Build order agreed 2026-09-28: 8 → 9 → 5 → 7 → 6. Each is its own branch
+and PR, merged when tests pass.
 
 ## 10. Milestone 0 findings
 
@@ -213,10 +236,8 @@ re-checked on the Zero. Scripts are in `spike/`.
 | Status | model `0x72`, tape width/type, errors, phases | `1F 11 xx` queries → `1A xx yy`: paper `06 89`, cover `05 98`, temp `03 a8`, serial `08 …`, firmware `07 02 00 03` |
 
 **Open items**
-- **Licence (blocks Milestone 4).** Ircama/PT-P300BT has no licence, so we
-  may not vendor it. Options: ask Ircama to add one; base on
-  piksel/pytouch-cube (MIT); or write our own encoder (the protocol is small:
-  status query, print parameters, PackBits-compressed 16-byte raster lines).
+- ~~Licence~~ — resolved: Milestone 4 is our own encoder; nothing of
+  Ircama's is vendored (the spike still imports it from a clone for reference).
 - **D30 label geometry.** A 40 mm image started ~12 mm into the label and ran
   off its far end. The roll may be 12 × 50 mm rather than 12 × 40, so the
   real size is unconfirmed. Needs calibration (§11).
@@ -239,10 +260,39 @@ Goal: set up and tune printers from the web page instead of SSH.
   and the UI stores the offset / band height for that label.
 
 Design questions to settle before building it:
-- **Where do settings live?** `printers.toml` is read-only today (`tomllib`
-  cannot write). Options: a separate machine-written `config/state.json`
-  (addresses, offsets) layered over the TOML, or a TOML writer dependency.
+- ~~Where do settings live?~~ — decided: `config/settings.json`, see §12.
 - **Pairing from a service** means driving BlueZ over D-Bus (`bleak` already
   pulls in `dbus-fast`) and needs the service user's BlueZ permissions.
 - This loosens the "no auth" rule's safety margin: anyone on the LAN could
   pair devices. Probably fine on a home LAN — decide explicitly.
+
+## 12. Templates and page-saved settings
+
+### Template syntax (`labelpi/templates.py`)
+
+| Placeholder | Becomes |
+|---|---|
+| `{field:Item}` | whatever is typed in the page's "Item" box (same name twice = same value) |
+| `{date:%d %b %Y}` | today, strftime-formatted (`28 Sep 2026`) |
+| `{time:%H:%M}` | same as `date`; the name just reads better |
+| `{date+3d:...}` `{date-1w:...}` `{date+3m:...}` `{date+1y:...}` | today shifted by days / weeks / months / years; a bare number means days. Months keep the day where possible (31 Jan + 1m → 28/29 Feb) |
+
+Anything else in braces is an error, reported when the template is saved.
+Built-in starters: **Today's date**, **Opened**, **Food** (made / use by +3
+days), **Freezer** (frozen / use by +3 months), **Container** (contents +
+date).
+
+### Settings file (`labelpi/settings.py`)
+
+- `config/settings.json`, next to `printers.toml` (override with
+  `$LABELPI_SETTINGS`). Gitignored. `printers.toml` stays hand-written and
+  read-only; the page never edits it.
+- Until the page saves anything, templates = starters + `[[templates]]` from
+  the TOML. The first add/edit/delete writes the full list to settings.json,
+  which is the only source from then on.
+- Writes are atomic (temp file + `fsync` + rename) under a lock, so waitress's
+  threads and power cuts can't corrupt it. An unreadable file is moved aside
+  as `settings.json.broken-<timestamp>` and the app starts fresh, rather than
+  refusing to start on a headless Pi.
+- Milestones 9 and 7 will add label sizes, printer addresses and calibration
+  to the same file.

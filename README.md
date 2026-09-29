@@ -4,8 +4,9 @@ Print labels to a Brother PT-P300BT and a Phomemo D30 over Bluetooth, from a
 browser or a script, via a tiny Flask service on a Raspberry Pi Zero W.
 
 - Web UI: `http://labelpi.lan:8080`
-- API: `POST /api/print/text`, `/api/print/image`, `/api/print/shortcut`
+- API: `POST /api/print/text`, `/api/print/image`, `/api/print/template`
   (add `?preview=1` to get a PNG instead of printing)
+- Templates: `GET/POST /api/templates`, `PUT/DELETE /api/templates/<id>`
 
 ## Docs
 

@@ -2,7 +2,7 @@
 Load and validate config/printers.toml.
 
 The whole file is checked at startup so mistakes fail loudly and early, with a
-message that names the file, the printer/label/shortcut and the field - e.g.
+message that names the file, the printer/label/template and the field - e.g.
 
     config/printers.toml: printers[1] (id "d30") > labels[0] (id "12x40"):
     "length_mm" is required for a fixed-size label
@@ -16,9 +16,10 @@ from __future__ import annotations
 import re
 import tomllib
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from labelpi.templates import Template, TemplateError, validate_template
 
 PRINTER_TYPES = ("brother_pt", "phomemo", "mock")
 _MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
@@ -80,29 +81,18 @@ class PrinterConfig:
 
 
 @dataclass(frozen=True)
-class ShortcutConfig:
-    id: str
-    name: str
-    text: str
-
-
-@dataclass(frozen=True)
 class Config:
     source: Path
     server: ServerConfig
     printers: tuple[PrinterConfig, ...]
-    shortcuts: tuple[ShortcutConfig, ...]
+    # Extra starting templates from [[templates]]. The live list is in
+    # settings.py (the page can add/edit/delete); these only seed it.
+    templates: tuple[Template, ...]
 
     def printer(self, printer_id: str) -> PrinterConfig | None:
         for printer in self.printers:
             if printer.id == printer_id:
                 return printer
-        return None
-
-    def shortcut(self, shortcut_id: str) -> ShortcutConfig | None:
-        for shortcut in self.shortcuts:
-            if shortcut.id == shortcut_id:
-                return shortcut
         return None
 
 
@@ -123,11 +113,11 @@ def load_config(path: str | Path) -> Config:
     table = _Table(data, where=str(path))
     server = _read_server(table.optional_table("server"))
     printers = tuple(_read_printer(t) for t in table.table_list("printers", required=True))
-    shortcuts = tuple(_read_shortcut(t) for t in table.table_list("shortcuts"))
+    templates = tuple(_read_template(t) for t in table.table_list("templates"))
 
     _check_unique([p.id for p in printers], "printer", str(path))
-    _check_unique([s.id for s in shortcuts], "shortcut", str(path))
-    return Config(source=path, server=server, printers=printers, shortcuts=shortcuts)
+    _check_unique([t.id for t in templates], "template", str(path))
+    return Config(source=path, server=server, printers=printers, templates=templates)
 
 
 def _read_server(t: _Table | None) -> ServerConfig:
@@ -192,18 +182,15 @@ def _read_label(t: _Table) -> LabelConfig:
     )
 
 
-def _read_shortcut(t: _Table) -> ShortcutConfig:
-    # Imported here, not at the top, because render.py imports this module.
-    from labelpi.render import RenderError, expand_placeholders
-
-    shortcut_id = t.identifier("id")
-    t.describe_as(f'id "{shortcut_id}"')
+def _read_template(t: _Table) -> Template:
+    template_id = t.identifier("id")
+    t.describe_as(f'id "{template_id}"')
     text = t.string("text")
     try:
-        expand_placeholders(text, datetime(2000, 1, 1))  # just to validate the syntax
-    except RenderError as exc:
+        validate_template(text)
+    except TemplateError as exc:
         t.fail("text", str(exc))
-    return ShortcutConfig(id=shortcut_id, name=t.string("name", default=shortcut_id), text=text)
+    return Template(id=template_id, name=t.string("name", default=template_id), text=text)
 
 
 def _check_unique(ids: list[str], what: str, where: str) -> None:

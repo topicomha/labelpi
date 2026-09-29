@@ -17,6 +17,8 @@ from werkzeug.exceptions import HTTPException
 
 from labelpi.config import Config, load_config
 from labelpi.printers import Registry
+from labelpi.settings import SettingsStore
+from labelpi.templates import STARTER_TEMPLATES
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "printers.toml"
 
@@ -27,23 +29,35 @@ class AppState:
 
     config: Config
     registry: Registry
+    settings: SettingsStore
 
 
-def create_app(config_path: str | Path | None = None, out_dir: Path | None = None) -> Flask:
+def create_app(
+    config_path: str | Path | None = None,
+    out_dir: Path | None = None,
+    settings_path: str | Path | None = None,
+) -> Flask:
     """
     Build the app. Config path: the argument, else $LABELPI_CONFIG, else
-    config/printers.toml. `out_dir` is where mock printers write PNGs.
-    Raises ConfigError for a bad config.
+    config/printers.toml. Settings saved from the page go to `settings_path`,
+    else $LABELPI_SETTINGS, else settings.json next to the config.
+    `out_dir` is where mock printers write PNGs. Raises ConfigError.
     """
     path = Path(config_path or os.environ.get("LABELPI_CONFIG") or DEFAULT_CONFIG)
     config = load_config(path)
     registry = Registry.from_config(config, out_dir=out_dir or Path("out"))
+    settings = SettingsStore(
+        Path(
+            settings_path or os.environ.get("LABELPI_SETTINGS") or path.with_name("settings.json")
+        ),
+        seed_templates=_seed_templates(config),
+    )
 
     app = Flask(__name__)
     # Flask rejects bigger request bodies with 413 before we ever see them,
     # so a huge upload can't eat the Pi Zero's 512 MB.
     app.config["MAX_CONTENT_LENGTH"] = int(config.server.max_upload_mb * 1024 * 1024)
-    app.extensions["labelpi"] = AppState(config=config, registry=registry)
+    app.extensions["labelpi"] = AppState(config=config, registry=registry, settings=settings)
 
     from labelpi.api import api  # imported here to keep module import order simple
 
@@ -56,6 +70,15 @@ def create_app(config_path: str | Path | None = None, out_dir: Path | None = Non
         return app.send_static_file("index.html")
 
     return app
+
+
+def _seed_templates(config: Config) -> list:
+    """Starter templates, with [[templates]] from the config added or replacing
+    a starter that has the same id."""
+    by_id = {t.id: t for t in STARTER_TEMPLATES}
+    for template in config.templates:
+        by_id[template.id] = template
+    return list(by_id.values())
 
 
 def _json_errors_for_api(app: Flask) -> None:

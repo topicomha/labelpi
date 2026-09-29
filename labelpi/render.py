@@ -1,5 +1,6 @@
 """
-Turn text, shortcuts and uploaded images into 1-bit label images.
+Turn text and uploaded images into 1-bit label images (templates.py fills in
+templates first; the result is plain text rendered here).
 
 Everything that gets printed goes through here, and preview uses exactly the
 same functions, so what you see is what prints.
@@ -11,9 +12,7 @@ backend's job (Printer.prepare), never this module's.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,40 +30,6 @@ THRESHOLD = 128  # grey values below this print as black
 
 class RenderError(ValueError):
     """The request can't be rendered (text doesn't fit, bad image...). API -> 400."""
-
-
-# ---------------------------------------------------------------------------
-# Shortcut placeholders: only {date:<strftime>} and {time:<strftime>}
-# ---------------------------------------------------------------------------
-_PLACEHOLDER_RE = re.compile(r"\{(date|time):([^{}]*)\}")
-
-
-def expand_placeholders(template: str, now: datetime) -> str:
-    """
-    Replace {date:%Y-%m-%d} / {time:%H:%M} with `now` formatted by strftime.
-
-    `date` and `time` behave the same; the name just says what you meant.
-    Anything else in braces is an error, so a typo shows up at startup
-    (config validation calls this) instead of printing "{dat:...}".
-    """
-
-    def replace(match: re.Match[str]) -> str:
-        fmt = match.group(2)
-        if not fmt:
-            raise RenderError(f"empty format in {match.group(0)!r}")
-        try:
-            return now.strftime(fmt)
-        except ValueError as exc:  # e.g. a bad % code on Windows
-            raise RenderError(f"bad format in {match.group(0)!r}: {exc}") from None
-
-    result = _PLACEHOLDER_RE.sub(replace, template)
-    # Any brace left over after substitution was not a valid placeholder.
-    leftover = _PLACEHOLDER_RE.sub("", template)
-    if "{" in leftover or "}" in leftover:
-        raise RenderError(
-            f"unknown placeholder in {template!r} - only {{date:...}} and {{time:...}} are allowed"
-        )
-    return result
 
 
 # ---------------------------------------------------------------------------

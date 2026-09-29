@@ -5,16 +5,19 @@
 const PREVIEW_DELAY_MS = 400; // wait for typing to pause before re-rendering
 const BUSY_POLL_MS = 5000; // refresh the printers' busy flags
 const STORAGE_PREFIX = "labelpi."; // remembers your last choices, per browser
+const FIELD_RE = /\{field:([^{}]*)\}/g; // same syntax as labelpi/templates.py
 
 const $ = (id) => document.getElementById(id);
 
 const state = {
   printers: [], // from GET /api/printers
-  shortcuts: [], // from GET /api/shortcuts
-  mode: "text", // "text" | "image" | "shortcut" (matches the API path)
+  templates: [], // from GET /api/templates: {id, name, text, fields}
+  mode: "text", // "text" | "image" | "template" (matches the API path)
   align: "center",
   file: null, // the chosen image File
-  shortcut: null, // id of the selected shortcut
+  template: null, // id of the selected template
+  fieldValues: {}, // what's typed into each {field:Name} box, by name
+  editing: null, // null, or {id: <id or null for a new one>} while the editor is open
   previewOk: false, // only allow printing what previewed without errors
   printing: false,
 };
@@ -31,12 +34,12 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   bindEvents();
   try {
-    const [printers, shortcuts] = await Promise.all([
+    const [printers, templates] = await Promise.all([
       getJson("/api/printers"),
-      getJson("/api/shortcuts"),
+      getJson("/api/templates"),
     ]);
     state.printers = printers;
-    state.shortcuts = shortcuts;
+    state.templates = templates;
   } catch (err) {
     setStatus("Can't reach labelpi - is the Pi on?", "error");
     return;
@@ -44,7 +47,7 @@ async function init() {
   fillPrinters();
   restoreChoices();
   fillLabels();
-  fillShortcuts();
+  fillTemplates();
   setMode(state.mode);
   schedulePreview(0);
   setInterval(refreshBusy, BUSY_POLL_MS);
@@ -88,6 +91,7 @@ function bindEvents() {
   $("invert").addEventListener("change", () => schedulePreview(0));
   bindDropzone();
 
+  bindTemplateEditor();
   $("print").addEventListener("click", print);
 }
 
@@ -107,7 +111,7 @@ function bindDropzone() {
 }
 
 // ---------------------------------------------------------------------------
-// Filling the controls
+// Printers and labels
 // ---------------------------------------------------------------------------
 function fillPrinters() {
   const select = $("printer");
@@ -133,37 +137,6 @@ function fillLabels() {
   if (labels.some((l) => l.id === previous)) select.value = previous;
 }
 
-function fillShortcuts() {
-  const box = $("shortcuts");
-  box.replaceChildren(
-    ...state.shortcuts.map((shortcut) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = shortcut.name;
-      button.setAttribute("aria-pressed", "false");
-      button.addEventListener("click", () => selectShortcut(shortcut.id));
-      return button;
-    }),
-  );
-  $("no-shortcuts").hidden = state.shortcuts.length > 0;
-  if (state.shortcuts.length && !state.shortcut) state.shortcut = state.shortcuts[0].id;
-  markSelectedShortcut();
-}
-
-function selectShortcut(id) {
-  state.shortcut = id;
-  markSelectedShortcut();
-  saveChoices();
-  schedulePreview(0);
-}
-
-function markSelectedShortcut() {
-  const buttons = $("shortcuts").children;
-  state.shortcuts.forEach((shortcut, i) => {
-    buttons[i].setAttribute("aria-pressed", String(shortcut.id === state.shortcut));
-  });
-}
-
 function setMode(mode) {
   state.mode = mode;
   for (const tab of document.querySelectorAll("[data-mode]")) {
@@ -181,6 +154,179 @@ function setFile(file) {
 }
 
 // ---------------------------------------------------------------------------
+// Templates: pick one, fill in its boxes; or edit / create one
+// ---------------------------------------------------------------------------
+function fillTemplates() {
+  const box = $("templates");
+  box.replaceChildren(
+    ...state.templates.map((template) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = template.name;
+      button.dataset.id = template.id;
+      button.addEventListener("click", () => selectTemplate(template.id));
+      return button;
+    }),
+  );
+  $("no-templates").hidden = state.templates.length > 0;
+  if (!state.templates.some((t) => t.id === state.template)) {
+    state.template = state.templates.length ? state.templates[0].id : null;
+  }
+  markSelectedTemplate();
+  renderFieldInputs();
+}
+
+function currentTemplate() {
+  return state.templates.find((t) => t.id === state.template);
+}
+
+function selectTemplate(id) {
+  state.template = id;
+  closeEditor();
+  markSelectedTemplate();
+  renderFieldInputs();
+  saveChoices();
+  schedulePreview(0);
+}
+
+function markSelectedTemplate() {
+  // While writing a new template nothing is highlighted; while editing one, that one.
+  const highlighted = state.editing ? state.editing.id : state.template;
+  for (const button of $("templates").children) {
+    button.setAttribute("aria-pressed", String(button.dataset.id === highlighted));
+  }
+  $("tpl-edit").disabled = !currentTemplate();
+  $("template-actions").hidden = Boolean(state.editing);
+}
+
+// Field names in the text being shown: the editor's text while editing,
+// otherwise the selected template's.
+function activeFields() {
+  if (state.editing) {
+    const names = [];
+    for (const match of $("tpl-text").value.matchAll(FIELD_RE)) {
+      const name = match[1].trim();
+      if (name && !names.includes(name)) names.push(name);
+    }
+    return names;
+  }
+  const template = currentTemplate();
+  return template ? template.fields : [];
+}
+
+function renderFieldInputs() {
+  const box = $("template-fields");
+  const names = activeFields();
+  // Keep the existing boxes (and the cursor) if the fields haven't changed.
+  const current = [...box.querySelectorAll("input")].map((i) => i.dataset.field);
+  if (current.join("\n") === names.join("\n")) return;
+
+  box.replaceChildren(
+    ...names.map((name) => {
+      const wrapper = document.createElement("label");
+      wrapper.className = "field";
+      const caption = document.createElement("span");
+      caption.textContent = name;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = 200;
+      input.dataset.field = name;
+      input.value = state.fieldValues[name] || "";
+      input.addEventListener("input", () => {
+        state.fieldValues[name] = input.value;
+        schedulePreview();
+      });
+      wrapper.append(caption, input);
+      return wrapper;
+    }),
+  );
+}
+
+function bindTemplateEditor() {
+  $("tpl-edit").addEventListener("click", () => {
+    const template = currentTemplate();
+    if (template) openEditor(template.id, template.name, template.text);
+  });
+  $("tpl-new").addEventListener("click", () =>
+    openEditor(null, "", "{field:Item}\n{date:%d %b %Y}"),
+  );
+  $("tpl-text").addEventListener("input", () => {
+    renderFieldInputs();
+    schedulePreview();
+  });
+  $("tpl-cancel").addEventListener("click", () => {
+    closeEditor();
+    renderFieldInputs();
+    schedulePreview(0);
+  });
+  $("tpl-editor").addEventListener("submit", (event) => {
+    event.preventDefault(); // we save with fetch, not a page reload
+    saveTemplate();
+  });
+  $("tpl-delete").addEventListener("click", deleteTemplate);
+}
+
+function openEditor(id, name, text) {
+  state.editing = { id };
+  $("tpl-name").value = name;
+  $("tpl-text").value = text;
+  $("tpl-delete").hidden = id === null;
+  showEditorMessage("");
+  $("tpl-editor").hidden = false;
+  markSelectedTemplate();
+  renderFieldInputs();
+  schedulePreview(0);
+  $(id === null ? "tpl-name" : "tpl-text").focus();
+}
+
+function closeEditor() {
+  state.editing = null;
+  $("tpl-editor").hidden = true;
+  markSelectedTemplate();
+}
+
+async function saveTemplate() {
+  const isNew = state.editing.id === null;
+  const url = isNew ? "/api/templates" : `/api/templates/${encodeURIComponent(state.editing.id)}`;
+  const response = await fetch(url, {
+    method: isNew ? "POST" : "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: $("tpl-name").value, text: $("tpl-text").value }),
+  }).catch(() => null);
+  if (!response) return showEditorMessage("Can't reach labelpi - is the Pi on?");
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) return showEditorMessage(body.detail || `Couldn't save (${response.status})`);
+  await reloadTemplates(body.id);
+  setStatus(`Saved template "${body.name}"`, "ok");
+}
+
+async function deleteTemplate() {
+  const template = state.templates.find((t) => t.id === state.editing.id);
+  if (!template || !confirm(`Delete the template "${template.name}"?`)) return;
+  const response = await fetch(`/api/templates/${encodeURIComponent(template.id)}`, {
+    method: "DELETE",
+  }).catch(() => null);
+  if (!response || !response.ok) return showEditorMessage("Couldn't delete the template.");
+  await reloadTemplates(null);
+  setStatus(`Deleted template "${template.name}"`, "ok");
+}
+
+async function reloadTemplates(selectId) {
+  state.templates = await getJson("/api/templates");
+  closeEditor();
+  if (selectId) state.template = selectId;
+  fillTemplates();
+  saveChoices();
+  schedulePreview(0);
+}
+
+function showEditorMessage(message) {
+  const box = $("tpl-message");
+  box.textContent = message;
+  box.hidden = !message;
+}
+
+// ---------------------------------------------------------------------------
 // Building the request - the same for preview and print, so what you see is
 // what prints. Returns null if there's nothing to print yet.
 // ---------------------------------------------------------------------------
@@ -195,9 +341,17 @@ function buildRequest(preview) {
     if (!text.trim()) return null;
     return jsonRequest(url, { printer, label, text, align: state.align });
   }
-  if (state.mode === "shortcut") {
-    if (!state.shortcut) return null;
-    return jsonRequest(url, { printer, label, shortcut: state.shortcut });
+  if (state.mode === "template") {
+    const fields = {};
+    for (const name of activeFields()) fields[name] = state.fieldValues[name] || "";
+    if (state.editing) {
+      // Unsaved template text: preview (and even print) it as it is now.
+      const text = $("tpl-text").value;
+      if (!text.trim()) return null;
+      return jsonRequest(url, { printer, label, text, fields });
+    }
+    if (!state.template) return null;
+    return jsonRequest(url, { printer, label, template: state.template, fields });
   }
   // image: multipart form, like `curl -F`
   if (!state.file) return null;
@@ -257,7 +411,7 @@ async function updatePreview() {
 
 function emptyHint() {
   if (state.mode === "image") return "Choose an image to see a preview.";
-  if (state.mode === "shortcut") return "Pick a shortcut.";
+  if (state.mode === "template") return "Pick a template.";
   return "Type something to see a preview.";
 }
 
@@ -381,16 +535,17 @@ function saveChoices() {
   save("label", $("label").value);
   save("mode", state.mode);
   save("text", $("text").value);
-  if (state.shortcut) save("shortcut", state.shortcut);
+  if (state.template) save("template", state.template);
 }
 
 function restoreChoices() {
   const printer = load("printer");
   if (state.printers.some((p) => p.id === printer)) $("printer").value = printer;
-  const mode = load("mode");
-  if (["text", "image", "shortcut"].includes(mode)) state.mode = mode;
+  let mode = load("mode");
+  if (mode === "shortcut") mode = "template"; // saved by an older version
+  if (["text", "image", "template"].includes(mode)) state.mode = mode;
   const text = load("text");
   if (text !== null) $("text").value = text;
-  const shortcut = load("shortcut");
-  if (state.shortcuts.some((s) => s.id === shortcut)) state.shortcut = shortcut;
+  const template = load("template");
+  if (state.templates.some((t) => t.id === template)) state.template = template;
 }
