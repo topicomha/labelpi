@@ -40,7 +40,7 @@ dpi = 203
   width_mm = 12
   length_mm = 40
 
-[[shortcuts]]
+[[templates]]
 id = "today"
 text = "{date:%Y-%m-%d}"
 """

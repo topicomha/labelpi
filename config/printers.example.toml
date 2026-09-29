@@ -60,13 +60,16 @@ dpi = 203                      # 8 px/mm; print head is 96 px = 12 mm wide
   continuous = false
 
 # ---------------------------------------------------------------------------
-# Shortcuts: one-click labels. Only {date:...} and {time:...} are expanded.
-[[shortcuts]]
-id = "today"
-name = "Today's date"
-text = "{date:%Y-%m-%d}"
-
-[[shortcuts]]
-id = "opened"
-name = "Opened on..."
-text = "Opened\n{date:%d %b %Y}"
+# Templates. labelpi starts with Today's date, Opened, Food, Freezer and
+# Container built in, and you can add/edit/delete templates on the web page
+# (saved in config/settings.json). Anything here is added to the starting
+# list; the same id as a built-in one replaces it.
+#
+#   {field:Name}          a box on the page to type into
+#   {date:%d %b %Y}       today (strftime format); {time:%H:%M} works too
+#   {date+3d:%d %b}       today + 3 days; also w (weeks), m (months), y (years),
+#                         and minus: {date-1w:...}. A bare number is days.
+[[templates]]
+id = "leftovers"
+name = "Leftovers"
+text = "{field:Dish}\nCooked {date:%a %d %b}\nEat by {date+2d:%a %d %b}"

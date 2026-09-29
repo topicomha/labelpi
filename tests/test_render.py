@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 from PIL import Image, ImageDraw
 
@@ -9,37 +7,18 @@ from labelpi.render import (
     MIN_FONT_PX,
     RenderError,
     canvas_for,
-    expand_placeholders,
     fit_image,
     render_text,
 )
 
 BROTHER_DPI = 180
 PHOMEMO_DPI = 203
-FROZEN = datetime(2026, 9, 28, 14, 5, 9)
 
 
 def black_box(image: Image.Image) -> tuple[int, int, int, int] | None:
     """Bounding box of the black pixels, or None if the image is all white."""
     # In mode "1", black is 0; invert so black becomes the non-zero "content".
     return Image.eval(image.convert("L"), lambda p: 255 - p).getbbox()
-
-
-# --- placeholders ----------------------------------------------------------
-def test_date_and_time_placeholders():
-    assert expand_placeholders("{date:%Y-%m-%d}", FROZEN) == "2026-09-28"
-    assert expand_placeholders("at {time:%H:%M}", FROZEN) == "at 14:05"
-    assert expand_placeholders("Opened\n{date:%d %b %Y}", FROZEN) == "Opened\n28 Sep 2026"
-
-
-def test_text_without_placeholders_is_unchanged():
-    assert expand_placeholders("plain text", FROZEN) == "plain text"
-
-
-@pytest.mark.parametrize("bad", ["{dat:%Y}", "{date}", "{date:}", "{now}", "stray } brace", "{"])
-def test_bad_placeholders(bad):
-    with pytest.raises(RenderError):
-        expand_placeholders(bad, FROZEN)
 
 
 # --- canvas ----------------------------------------------------------------

@@ -33,7 +33,7 @@
       <div class="segmented" role="tablist" aria-label="What to print">
         <button type="button" role="tab" data-mode="text" aria-selected="true">Text</button>
         <button type="button" role="tab" data-mode="image" aria-selected="false">Image</button>
-        <button type="button" role="tab" data-mode="shortcut" aria-selected="false">Shortcuts</button>
+        <button type="button" role="tab" data-mode="template" aria-selected="false">Templates</button>
       </div>
 
       <div class="panel" data-panel="text">
@@ -59,9 +59,47 @@
         </div>
       </div>
 
-      <div class="panel" data-panel="shortcut" hidden>
-        <div class="shortcuts" id="shortcuts"></div>
-        <p class="hint" id="no-shortcuts" hidden>No shortcuts configured.</p>
+      <div class="panel" data-panel="template" hidden>
+        <div class="chips" id="templates"></div>
+        <p class="hint" id="no-templates" hidden>No templates yet - add one below.</p>
+
+        <!-- One box per {field:...} in the chosen template -->
+        <div class="template-fields" id="template-fields"></div>
+
+        <div class="template-actions" id="template-actions">
+          <button type="button" class="link" id="tpl-edit">Edit this template</button>
+          <button type="button" class="link" id="tpl-new">+ New template</button>
+        </div>
+
+        <!-- Template editor (hidden until Edit / New) -->
+        <form class="editor" id="tpl-editor" hidden>
+          <label class="field">
+            <span>Name</span>
+            <input type="text" id="tpl-name" maxlength="40" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Template</span>
+            <textarea id="tpl-text" rows="4" spellcheck="false"></textarea>
+          </label>
+          <details class="help">
+            <summary>How templates work</summary>
+            <ul>
+              <li><code>{field:Item}</code> - a box to type into when printing</li>
+              <li><code>{date:%d %b %Y}</code> - today, e.g. 28 Sep 2026</li>
+              <li><code>{date+3d:%d %b}</code> - in 3 days; also <code>w</code> weeks,
+                <code>m</code> months, <code>y</code> years, and <code>-</code> for the past</li>
+              <li><code>{time:%H:%M}</code> - the time now</li>
+              <li>Formats: <code>%d</code> day, <code>%b</code> month (Sep), <code>%m</code>
+                month (09), <code>%Y</code> year, <code>%a</code> weekday (Mon)</li>
+            </ul>
+          </details>
+          <p class="hint error" id="tpl-message" hidden></p>
+          <div class="editor-buttons">
+            <button type="submit" class="primary" id="tpl-save">Save</button>
+            <button type="button" id="tpl-cancel">Cancel</button>
+            <button type="button" class="danger" id="tpl-delete">Delete</button>
+          </div>
+        </form>
       </div>
     </section>
 

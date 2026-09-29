@@ -11,7 +11,7 @@ two label printers:
 
 | Printer | Protocol / library | Transport |
 |---|---|---|
-| Brother P-touch Cube **PT-P300BT** | Ircama/PT-P300BT protocol — **unlicensed, see below** | Bluetooth Classic, stdlib RFCOMM socket, channel 1 |
+| Brother P-touch Cube **PT-P300BT** | in-house raster encoder (`printers/brother.py`) | Bluetooth Classic, stdlib RFCOMM socket, channel 1 |
 | **Phomemo** D30 (not Niimbot!) | in-house ESC/POS raster encoder (~50 lines) | BLE GATT via `bleak` (service FF00, write FF02) |
 
 It exposes a REST API (for automation) and a single responsive web page that uses
@@ -24,13 +24,14 @@ keep the Python plain, explicit and well-commented.
   compiler on the Pi or that lack ARMv6 wheels (piwheels) or Debian packages.
   No Node, no .NET, no Docker on the Pi.
 - **Pure Python where possible.** Allowed runtime deps: `flask`, `waitress`,
-  `pillow`, `bleak` (the D30 only printed over BLE in Milestone 0), plus
-  `packbits` if we keep Ircama's Brother encoder. `pyserial` is not needed —
-  both printers use sockets/BLE directly. Justify any addition.
+  `pillow`, `bleak` (the D30 only printed over BLE in Milestone 0).
+  `pyserial`/`packbits` are not needed — both printers use sockets/BLE
+  directly and PackBits is ~20 lines in `brother.py`. Justify any addition.
 - **No build step.** Front end is one `index.html`, one `app.js`, one `style.css`.
   Vanilla JS, no frameworks, no bundler, no CDN dependencies (the Pi may be
   offline-ish; serve everything locally).
-- **No queue, no database, no background workers.** Each printer has its own
+- **No queue, no database, no background workers.** (Settings saved from the
+  page go in one JSON file, `config/settings.json` — not a database.) Each printer has its own
   in-memory lock. If a printer is busy, the API returns `409 Busy` immediately.
   The two printers are independent — one can print while the other is busy.
 - **Config is TOML, read with the stdlib `tomllib`** (Python ≥ 3.11). No YAML.
@@ -46,11 +47,13 @@ labelpi/
   app.py            # Flask app factory: create_app(config_path)
   api.py            # /api blueprint — all endpoints
   config.py         # load + validate config/printers.toml
-  render.py         # text -> image, fit image to label, shortcut expansion
+  render.py         # text -> image, fit image to label
+  templates.py      # template syntax: {field:..}, {date+3d:..}; starter templates
+  settings.py       # config/settings.json: what the page saves (templates, ...)
   printers/
     __init__.py     # registry: build printers from config, per-printer locks
     base.py         # Printer interface (abstract base class)
-    brother.py      # PT-P300BT backend (wraps vendored Ircama code)
+    brother.py      # PT-P300BT backend (our own raster encoder)
     phomemo.py      # Phomemo D30 backend (ESC/POS raster over BLE)
     mock.py         # writes PNGs to ./out/ instead of printing
   vendor/           # vendored third-party printer code, with LICENSE files
@@ -77,7 +80,7 @@ requirements-dev.txt
 
 ## Architecture rules
 
-- **Everything becomes an image.** Text and shortcuts are rendered to a 1-bit
+- **Everything becomes an image.** Text and filled-in templates are rendered to a 1-bit
   Pillow image by `render.py`; backends only ever receive a ready-to-print image.
   Backends do not know about text.
 - **Backends implement `base.Printer`:**
@@ -120,7 +123,7 @@ config — use this for local dev and in tests.
 ## Testing
 
 - `pytest`, no hardware. Tests always run with the mock backend.
-- Cover: text rendering sizes/fitting, image fitting per label type, shortcut
+- Cover: text rendering sizes/fitting, image fitting per label type, template
   expansion (dates with a frozen clock), config loading/validation errors, and
   API behaviour via Flask's test client (happy path, 400/404/409, preview).
 - Test the busy path by holding a printer's lock in the test and asserting 409.
@@ -142,9 +145,8 @@ config — use this for local dev and in tests.
    apply. Protocol refs: polskafan/phomemo_d30 (MIT),
    odensc/phomemo-d30-web-bluetooth (Apache-2.0). daehyeok/d30-printer is
    AGPL — read it, never copy from it.
-2. **Ircama/PT-P300BT has no licence** — do not vendor or copy it. Blocks
-   Milestone 4 until resolved: licence from Ircama, piksel/pytouch-cube (MIT),
-   or our own encoder.
+2. **Ircama/PT-P300BT has no licence** — never vendor or copy it. Milestone 4
+   avoided it with our own encoder; keep it that way.
 3. **A sent job is not a printed label.** The D30 sends no completion message
    over BLE and swallowed jobs silently when a label was jammed. The Brother
    does confirm completion — wait for it before disconnecting.
@@ -158,6 +160,6 @@ config — use this for local dev and in tests.
 
 ## Out of scope — don't build these
 
-Label designer / WYSIWYG layout, saved templates, job queue or history,
+Label designer / WYSIWYG layout, job queue or history,
 user accounts, barcode/QR generation (maybe later), USB printing, multiple
 copies in one request (callers can loop).

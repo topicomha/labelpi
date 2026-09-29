@@ -72,8 +72,12 @@ def test_printers_show_busy(client, registry):
     assert [p["busy"] for p in body] == [True, False]
 
 
-def test_list_shortcuts(client):
-    assert client.get("/api/shortcuts").get_json() == [{"id": "today", "name": "today"}]
+def test_list_templates_includes_starters_and_config(client):
+    body = client.get("/api/templates").get_json()
+    by_id = {t["id"]: t for t in body}
+    assert list(by_id) == ["today", "opened", "food", "freezer", "container"]
+    assert by_id["today"]["text"] == "{date:%Y-%m-%d}"  # config version replaced the starter
+    assert by_id["freezer"]["fields"] == ["Item"]
 
 
 # --- print text -------------------------------------------------------------
@@ -166,28 +170,101 @@ def test_body_must_be_json_object(client):
     assert_error(client.post("/api/print/text", json=["a"]), 400, "bad_request")
 
 
-# --- print shortcut ---------------------------------------------------------
-def test_print_shortcut(client, registry):
+# --- print template -----------------------------------------------------------
+def preview(client, **body):
+    body = {"printer": "die", "label": "12x40", **body}
+    return client.post("/api/print/template?preview=1", json=body)
+
+
+def test_print_template(client, registry):
     response = client.post(
-        "/api/print/shortcut", json={"printer": "die", "label": "12x40", "shortcut": "today"}
+        "/api/print/template",
+        json={
+            "printer": "die",
+            "label": "12x40",
+            "template": "freezer",
+            "fields": {"Item": "Soup"},
+        },
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.get_json()
     assert len(registry.get("die").printed) == 1
 
 
-def test_shortcut_uses_the_clock(app, client):
-    body = {"printer": "die", "label": "12x40", "shortcut": "today"}
-    first = client.post("/api/print/shortcut?preview=1", json=body).data
+def test_template_uses_the_clock(app, client):
+    first = preview(client, template="today").data
     app.config["LABELPI_NOW"] = lambda: datetime(2030, 1, 1)
-    second = client.post("/api/print/shortcut?preview=1", json=body).data
+    second = preview(client, template="today").data
     assert first != second  # different date -> different picture
 
 
-def test_unknown_shortcut(client):
-    response = client.post(
-        "/api/print/shortcut", json={"printer": "die", "label": "12x40", "shortcut": "nope"}
+def test_fields_change_the_picture(client):
+    soup = preview(client, template="freezer", fields={"Item": "Soup"}).data
+    stew = preview(client, template="freezer", fields={"Item": "Beef stew"}).data
+    assert soup != stew
+
+
+def test_preview_unsaved_template_text(client):
+    response = preview(client, text="{field:X}\n{date+1w:%d %b}", fields={"X": "hi"})
+    assert response.mimetype == "image/png"
+
+
+@pytest.mark.parametrize(
+    "body, status",
+    [
+        ({"template": "nope"}, 404),
+        ({}, 400),  # neither template nor text
+        ({"text": "{nope}"}, 400),
+        ({"template": "freezer", "fields": ["Soup"]}, 400),
+        ({"template": "freezer", "fields": {"Item": 5}}, 400),
+        ({"template": "freezer", "fields": {"Item": "x" * 500}}, 400),
+    ],
+)
+def test_print_template_errors(client, body, status):
+    assert preview(client, **body).status_code == status
+
+
+# --- manage templates ------------------------------------------------------------
+def test_create_edit_delete_template(client, app):
+    created = client.post("/api/templates", json={"name": "Jar", "text": "{field:Contents}"})
+    assert created.status_code == 201
+    template = created.get_json()
+    assert template == {
+        "id": "jar",
+        "name": "Jar",
+        "text": "{field:Contents}",
+        "fields": ["Contents"],
+    }
+
+    edited = client.put("/api/templates/jar", json={"name": "Big jar", "text": "{date:%Y}"})
+    assert edited.get_json()["name"] == "Big jar" and edited.get_json()["fields"] == []
+
+    assert client.delete("/api/templates/jar").status_code == 204
+    assert "jar" not in [t["id"] for t in client.get("/api/templates").get_json()]
+
+
+def test_template_changes_are_saved_to_settings_file(client, tmp_path):
+    client.post("/api/templates", json={"name": "Jar", "text": "x"})
+    assert (tmp_path / "settings.json").exists()  # next to printers.toml
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"text": "x"},  # no name
+        {"name": "", "text": "x"},
+        {"name": "Bad", "text": "{dat:%Y}"},
+        {"name": "No text"},
+    ],
+)
+def test_create_template_errors(client, body):
+    assert_error(client.post("/api/templates", json=body), 400, "bad_request")
+
+
+def test_edit_or_delete_unknown_template(client):
+    assert_error(
+        client.put("/api/templates/nope", json={"name": "x", "text": "x"}), 404, "not_found"
     )
-    assert_error(response, 404, "not_found")
+    assert_error(client.delete("/api/templates/nope"), 404, "not_found")
 
 
 # --- print image -------------------------------------------------------------

@@ -24,7 +24,8 @@ from PIL import Image, UnidentifiedImageError
 from labelpi.app import AppState
 from labelpi.config import LabelConfig
 from labelpi.printers import Printer, PrinterBusy, PrinterError, PrinterUnavailable
-from labelpi.render import RenderError, expand_placeholders, fit_image, render_text
+from labelpi.render import RenderError, fit_image, render_text
+from labelpi.templates import Template, TemplateError, fill_template
 
 log = logging.getLogger(__name__)
 api = Blueprint("api", __name__, url_prefix="/api")
@@ -61,7 +62,7 @@ def _state() -> AppState:
 
 
 def _now() -> datetime:
-    """Current time for shortcuts. Tests replace it via app.config["LABELPI_NOW"]."""
+    """Current time for templates. Tests replace it via app.config["LABELPI_NOW"]."""
     clock: Callable[[], datetime] = current_app.config.get("LABELPI_NOW", datetime.now)
     return clock()
 
@@ -95,9 +96,58 @@ def _label_json(label: LabelConfig) -> dict[str, Any]:
     return data
 
 
-@api.get("/shortcuts")
-def list_shortcuts():
-    return jsonify([{"id": s.id, "name": s.name} for s in _state().config.shortcuts])
+# ---------------------------------------------------------------------------
+# Templates: list, create, edit, delete (saved in settings.json)
+# ---------------------------------------------------------------------------
+@api.get("/templates")
+def list_templates():
+    return jsonify([_template_json(t) for t in _state().settings.templates()])
+
+
+@api.post("/templates")
+def create_template():
+    body = _json_body()
+    template = _template_call(
+        lambda: _state().settings.add_template(body.get("name"), _required_str(body, "text"))
+    )
+    return jsonify(_template_json(template)), 201
+
+
+@api.put("/templates/<template_id>")
+def update_template(template_id: str):
+    body = _json_body()
+    template = _template_call(
+        lambda: _state().settings.update_template(
+            template_id, body.get("name"), _required_str(body, "text")
+        )
+    )
+    if template is None:
+        raise not_found(f'unknown template "{template_id}"')
+    return jsonify(_template_json(template))
+
+
+@api.delete("/templates/<template_id>")
+def delete_template(template_id: str):
+    if not _state().settings.delete_template(template_id):
+        raise not_found(f'unknown template "{template_id}"')
+    return "", 204
+
+
+def _template_json(template: Template) -> dict[str, Any]:
+    return {
+        "id": template.id,
+        "name": template.name,
+        "text": template.text,
+        "fields": template.fields,
+    }
+
+
+def _template_call(action: Callable[[], Any]) -> Any:
+    """Run a settings change, turning a bad template/name into 400."""
+    try:
+        return action()
+    except TemplateError as exc:
+        raise bad_request(str(exc)) from None
 
 
 # ---------------------------------------------------------------------------
@@ -121,16 +171,33 @@ def print_text():
     return _preview_or_print(printer, label, image)
 
 
-@api.post("/print/shortcut")
-def print_shortcut():
+@api.post("/print/template")
+def print_template():
+    """
+    Print a saved template ("template": id) or unsaved template text
+    ("text": "..." - the editor's live preview uses this), with "fields":
+    {"Item": "Chicken soup"} filling in its {field:...} blanks.
+    """
     body = _json_body()
     printer, label = _printer_and_label(body.get("printer"), body.get("label"))
-    shortcut_id = _required_str(body, "shortcut")
-    shortcut = _state().config.shortcut(shortcut_id)
-    if shortcut is None:
-        raise not_found(f'unknown shortcut "{shortcut_id}"')
+    if "template" in body:
+        template_id = _required_str(body, "template")
+        template = _state().settings.template(template_id)
+        if template is None:
+            raise not_found(f'unknown template "{template_id}"')
+        text = template.text
+    else:
+        text = _required_str(body, "text")
+    fields = body.get("fields") or {}
+    if not isinstance(fields, dict) or not all(isinstance(v, str) for v in fields.values()):
+        raise bad_request('"fields" must be an object of text values, e.g. {"Item": "Soup"}')
     image = _render(
-        lambda: render_text(expand_placeholders(shortcut.text, _now()), label, printer.config.dpi)
+        lambda: render_text(
+            fill_template(text, _now(), fields),
+            label,
+            printer.config.dpi,
+            align=_optional(body, "align", str, "center"),
+        )
     )
     return _preview_or_print(printer, label, image)
 

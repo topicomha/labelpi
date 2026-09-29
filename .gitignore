@@ -1,8 +1,9 @@
 # --- Private: never commit ------------------------------------------------
 # Real config holds your printers' Bluetooth MAC addresses.
 config/printers.toml
-# Machine-written settings (planned for Milestone 7: addresses, calibration).
-config/state.json
+# Saved from the web page (templates; later labels, addresses, calibration).
+config/settings.json
+config/settings.json.*
 .env
 *.local.*
 
