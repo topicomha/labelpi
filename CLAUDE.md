@@ -156,9 +156,12 @@ config — use this for local dev and in tests. `LABELPI_CONFIG` and
    calibration UI for other rolls comes with Milestone 7.
 5. **Licences.** Check the licence of each piece of code before vendoring it and
    keep its LICENSE file alongside it in `vendor/`.
-6. The `spike/` scripts are superseded by the real backends (Milestones 4–5)
-   but their `--calibrate` rulers are the reference for the calibration UI
-   (Milestone 7). Delete the folder once that exists.
+6. **Calibrating** a label: `POST /api/print/ruler` prints a mm ruler through
+   the real backend (so the current `offset_mm` applies); read where 0 and the
+   end land and adjust `length_mm` / `offset_mm`. The Milestone 0 `spike/`
+   scripts are gone (they're in git history before 2026-09-28's cleanup).
+   Labels in use: Brother 12 mm tape, D30 12 × 50 mm - add others only when
+   needed.
 
 ## Working agreements (how the owner wants this repo run)
 

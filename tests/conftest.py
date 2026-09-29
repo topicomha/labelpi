@@ -35,10 +35,10 @@ address = "11:22:33:44:55:66"
 dpi = 203
 
   [[printers.labels]]
-  id = "12x40"
+  id = "12x50"
   continuous = false
   width_mm = 12
-  length_mm = 40
+  length_mm = 50
 
 [[templates]]
 id = "today"
@@ -78,4 +78,4 @@ def tape_label(config):
 
 @pytest.fixture
 def die_label(config):
-    return config.printer("die").label("12x40")
+    return config.printer("die").label("12x50")

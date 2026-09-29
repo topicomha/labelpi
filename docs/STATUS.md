@@ -39,8 +39,8 @@ Zero W.
 - **Phomemo D30** — the Milestone 5 backend connected over BLE (~2.7 s),
   got paper/cover status, and the printer acknowledged all 3,857 bytes of a
   Freezer-template job. **Nobody has looked at the resulting label yet.**
-- **D30 label geometry — calibrated 2026-09-28** with the spike's ruler
-  (`spike_phomemo.py --transport ble --calibrate --label 12x50`): the labels
+- **D30 label geometry — calibrated 2026-09-28** with a ruler print (the
+  spike's; now `POST /api/print/ruler`, same drawing): the labels
   are **12 × 50 mm**; a 50 mm image lands with 0 ~0.5 mm before the leading
   edge and 50 at the far end, true to scale, reading the right way round.
   So `length_mm = 50`, `offset_mm = 0`. The earlier "~12 mm in" was a 40 mm
@@ -51,7 +51,9 @@ Zero W.
 1. **Print a template on the D30 through the real backend** (the page or
    the API, label `12x50`) and look at it. Geometry is now calibrated (see
    "Verified"), but that was the spike's ruler; the Milestone 5 backend's own
-   output still hasn't been looked at. Note: the D30's label id changed from
+   output still hasn't been looked at. Quickest check: `POST /api/print/ruler`
+   `{"printer": "d30", "label": "12x50"}` should look exactly like the
+   calibration photo. Note: the D30's label id changed from
    `12x40` to `12x50` - a browser that remembered `12x40` just falls back to
    the first label.
 2. Three-line templates (e.g. Freezer) are small on 12 mm Brother tape (all

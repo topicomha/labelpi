@@ -198,6 +198,60 @@ def render_text(
 
 
 # ---------------------------------------------------------------------------
+# Calibration ruler
+# ---------------------------------------------------------------------------
+DEFAULT_RULER_TAPE_MM = 50.0
+
+
+def render_ruler(label: LabelConfig, dpi: int, length_mm: float | None = None) -> Image.Image:
+    """
+    A mm ruler along the whole label, for measuring where printing lands.
+
+    0 is the first column of the image (a solid bar), with a tick every mm,
+    longer ones every 5 mm and a number every 10 mm, plus a line along both
+    long edges to check the width. Margins are ignored on purpose: the ruler
+    shows the image itself. Compare it with the label's physical edges, then
+    set length_mm / offset_mm in printers.toml. On tape it is `length_mm`
+    long (default 50 mm).
+    """
+    px_per_mm = dpi / 25.4
+    if label.continuous:
+        length = DEFAULT_RULER_TAPE_MM if length_mm is None else length_mm
+        if length <= 0:
+            raise RenderError("length_mm must be greater than 0")
+        width, height = round(length * px_per_mm), label.print_height_px
+        _check_length(width)
+    else:
+        if length_mm is not None:
+            raise RenderError(
+                f'label "{label.id}" has a fixed size; length_mm only applies to tape'
+            )
+        length = label.length_mm
+        width, height = round(label.length_mm * px_per_mm), round(label.width_mm * px_per_mm)
+
+    image = Image.new("L", (width, height), 255)
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([0, 0, width - 1, 1], fill=0)  # top edge line
+    draw.rectangle([0, height - 2, width - 1, height - 1], fill=0)  # bottom edge line
+    draw.rectangle([0, 0, 5, height - 1], fill=0)  # the 0 mm bar
+    font = load_font(max(MIN_FONT_PX, height // 4))
+    last_mm = int(length)
+    for mm in range(1, last_mm + 1):
+        x = min(width - 1, round(mm * px_per_mm) - 1)
+        if mm % 10 == 0:
+            tick = height // 2
+        elif mm % 5 == 0:
+            tick = height // 3
+        else:
+            tick = height // 6
+        draw.line([(x, 0), (x, tick)], fill=0, width=2 if mm % 5 == 0 else 1)
+        if mm % 10 == 0:
+            anchor = "rb" if mm == last_mm else "mb"  # keep the last number on the label
+            draw.text((x, height - 6), str(mm), font=font, fill=0, anchor=anchor)
+    return to_one_bit(image)
+
+
+# ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------
 def fit_image(

@@ -84,21 +84,21 @@ def label_image(die_label):
 
 # --- encoding --------------------------------------------------------------------
 def test_head_orientation_is_96_wide():
-    rotated = to_head_orientation(Image.new("1", (320, 96), 1))
-    assert rotated.size == (96, 320)
+    rotated = to_head_orientation(Image.new("1", (400, 96), 1))
+    assert rotated.size == (96, 400)
 
 
-def test_rotation_direction_matches_the_spike():
-    """The spike's working setting was 'rotate 270 clockwise': the label's
+def test_rotation_direction_matches_the_hardware_test():
+    """The Milestone 0 hardware test's working setting was 'rotate 270 clockwise': the label's
     top-left corner ends up bottom-left."""
-    image = Image.new("1", (320, 96), 1)
+    image = Image.new("1", (400, 96), 1)
     ImageDraw.Draw(image).rectangle([0, 0, 9, 9], fill=0)  # top-left block
     rotated = to_head_orientation(image)
-    assert rotated.getpixel((0, 319)) == 0 and rotated.getpixel((95, 0)) != 0
+    assert rotated.getpixel((0, 399)) == 0 and rotated.getpixel((95, 0)) != 0
 
 
 def test_encode_job_bytes():
-    image = Image.new("1", (96, 320), 1)
+    image = Image.new("1", (96, 400), 1)
     image.putpixel((0, 0), 0)  # one black dot: first bit of the first row
     job = encode_job(image)
     header = (
@@ -106,12 +106,12 @@ def test_encode_job_bytes():
         + b"\x1b@"
         + b"\x1dv0\x00"
         + (12).to_bytes(2, "little")
-        + (320).to_bytes(2, "little")
+        + (400).to_bytes(2, "little")
     )
     assert job.startswith(header)
     assert job.endswith(END_OF_JOB)
     raster = job[len(header) : -len(END_OF_JOB)]
-    assert len(raster) == 12 * 320
+    assert len(raster) == 12 * 400
     assert raster[0] == 0x80 and set(raster[1:]) == {0}  # 1 = black, MSB = leftmost
 
 
@@ -130,17 +130,17 @@ def test_answer_byte_ignores_acks():
 def test_prepare_keeps_size_and_orientation(d30_config, die_label):
     image = label_image(die_label)
     prepared = make_printer(d30_config, FakeD30()).prepare(image, die_label)
-    assert prepared.size == image.size == (320, 96)
+    assert prepared.size == image.size == (400, 96)
 
 
 def test_offset_moves_the_print_along_the_label(d30_config, die_label):
     from dataclasses import replace
 
-    image = Image.new("1", (320, 96), 1)
+    image = Image.new("1", (400, 96), 1)
     image.putpixel((0, 50), 0)
     printer = make_printer(d30_config, FakeD30())
     later = printer.prepare(image, replace(die_label, offset_mm=2))
-    assert later.size == (320, 96) and later.getpixel((16, 50)) == 0  # 2 mm = 16 px
+    assert later.size == (400, 96) and later.getpixel((16, 50)) == 0  # 2 mm = 16 px
     earlier = printer.prepare(image, replace(die_label, offset_mm=-1))
     assert earlier.getpixel((0, 50)) != 0  # white: moved off the start
 
