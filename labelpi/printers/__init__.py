@@ -41,7 +41,11 @@ def mock_forced() -> bool:
 def build_printer(config: PrinterConfig, force_mock: bool, out_dir: Path) -> Printer:
     if force_mock or config.type == "mock":
         return MockPrinter(config, out_dir=out_dir)
-    # Real backends arrive in Milestones 4 (Brother) and 5 (Phomemo).
+    if config.type == "brother_pt":
+        from labelpi.printers.brother import BrotherPrinter
+
+        return BrotherPrinter(config)
+    # The Phomemo backend arrives in Milestone 5.
     raise NotImplementedError(
         f'printer "{config.id}": the "{config.type}" backend is not written yet - '
         "run with LABELPI_MOCK=1 for now"
