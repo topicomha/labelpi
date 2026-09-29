@@ -176,7 +176,7 @@ class PhomemoPrinter(Printer):
         super().__init__(config)
         self._open_session = open_session
 
-    def prepare(self, image: Image.Image, label: LabelConfig) -> Image.Image:
+    def prepare(self, image: Image.Image, label: LabelConfig, chain: bool = False) -> Image.Image:
         """
         Apply the label's calibration offset along its length, keeping the
         label size: positive offset_mm moves the print later (blank space
@@ -191,7 +191,8 @@ class PhomemoPrinter(Printer):
         shifted.paste(image, (shift, 0))
         return shifted
 
-    def print(self, image: Image.Image, label: LabelConfig) -> None:
+    def print(self, image: Image.Image, label: LabelConfig, chain: bool = False) -> None:
+        # Die-cut labels: nothing to chain, `chain` is ignored.
         job = encode_job(to_head_orientation(image))
         try:
             asyncio.run(self._print(job))

@@ -13,7 +13,7 @@ id = "brother"
 display_name = "Brother PT-P300BT"
 type = "brother_pt"            # brother_pt | phomemo | mock
 address = "AA:BB:CC:DD:EE:FF"  # Bluetooth MAC (Classic; pair + trust once)
-dpi = 180                      # across the tape; along it one line = 0.149 mm
+dpi = 180                      # both ways: a 50 mm ruler measures 50 mm
 
   # Continuous tape: height is fixed, length follows the content.
   # The printer always takes a 128-px raster; print_height_px is the band

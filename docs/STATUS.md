@@ -35,7 +35,13 @@ Zero W.
   real backend. Connect ~4 s, send ~0.4 s, print ~8 s for a 63 mm label; the
   printer confirms completion. 12 mm tape band = 64 px (rows 32–95),
   measured with the calibration strip. Raster output is bit-identical to the
-  spike encoder that printed correctly.
+  spike encoder that printed correctly. **Calibration ruler 2026-09-28**
+  (`POST /api/print/ruler`, 50 mm, measured against an inch ruler): length
+  true (~49.7 mm for 50), both band edge lines print with ~1.5 mm of tape
+  above and below, i.e. centred. (An earlier note that it prints 0.149 mm
+  per line / ~5 % long was wrong.) Every job starts with **~24 mm of blank
+  lead**: the head-to-cutter distance, fed out after the previous job so it
+  could be cut.
 - **Phomemo D30** — the Milestone 5 backend connected over BLE (~2.7 s),
   got paper/cover status, and the printer acknowledged all 3,857 bytes of a
   Freezer-template job (nobody looked at that label). On 2026-09-28 the
@@ -51,6 +57,13 @@ Zero W.
 
 ## Open questions — resolve first
 
+0. **Printers going to sleep** (owner, 2026-09-28: "we'll have to figure out
+   how to handle these timeouts or sleeps"). The Brother drops off Bluetooth
+   when idle ("Host is down"; its green light flashes; a button press wakes
+   it), and the D30 sleeps too. Today that's a 503 "not reachable". Decide:
+   a clearer "asleep - press its button" message, a status poll on the page,
+   or keeping them awake. Connect is ~3–3.7 s from cold vs ~0.2–0.5 s awake.
+
 1. **Watch the D30's first-job-after-idle Bluetooth drops** ("GATT Protocol
    Error: Unlikely Error" straight after connecting, seen three times on
    2026-09-28). The backend now waits 0.5 s after connecting and retries once
@@ -61,9 +74,6 @@ Zero W.
 2. Three-line templates (e.g. Freezer) are small on 12 mm Brother tape (all
    lines share ~9 mm). Owner may want one-line, tape-friendly variants.
 3. Brother 9 mm / 6 mm bands (48 / 32 px) are unverified guesses.
-4. Along the tape the Brother prints 0.149 mm per line (~170 dpi) while
-   config says 180 dpi, so tape labels come out ~5 % longer than
-   `length_mm` asks for. Minor; fix if it matters.
 
 ## Next: Milestone 9 — label sizes from the page
 
@@ -146,6 +156,11 @@ To push from the Pi you need GitHub credentials there, e.g. `gh auth login`
   width, numbers cut off at one edge and reappearing at the other (seen
   2026-09-28). A power cycle clears it. The backend now refuses to print when
   the D30 answers neither status query, and a mid-job drop says to power-cycle.
+- **Brother chain printing works** (2026-09-28): ESC i K without the
+  no-chaining bit → no feed-out, labels ~2–3 mm apart; a one-line blank job
+  with the bit set feeds the strip out to the cutter. Reconnecting straight
+  after a job can fail with EBUSY while Linux closes the old RFCOMM link —
+  the backend retries for up to 5 s.
 - A jammed D30 label swallows jobs silently while still reporting "paper
   present". If nothing comes out, reseat the roll.
 - The D30 disappears from scans while a phone is connected to it or when it

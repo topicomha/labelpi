@@ -63,6 +63,8 @@ function bindEvents() {
     saveChoices();
     schedulePreview();
   });
+  $("auto-feed").addEventListener("change", () => setAutoFeed($("auto-feed").checked));
+  $("feed").addEventListener("click", feed);
 
   for (const tab of document.querySelectorAll("[data-mode]")) {
     tab.addEventListener("click", () => {
@@ -128,6 +130,61 @@ function currentPrinter() {
   return state.printers.find((p) => p.id === $("printer").value);
 }
 
+// Tape printers can print labels back to back (no feed-out, cut lines between
+// them) and then feed the whole strip out with "Feed & cut".
+function updateFeedControls() {
+  const printer = currentPrinter();
+  const canChain = Boolean(printer && printer.can_chain);
+  $("feed-options").hidden = !canChain;
+  $("feed").hidden = !canChain || printer.auto_feed;
+  if (!canChain) return;
+  $("auto-feed").checked = printer.auto_feed;
+  $("feed-hint").textContent = printer.auto_feed
+    ? "Each label comes out ready to cut (with ~24 mm of blank tape before it)."
+    : "Labels print back to back with cut lines. Press Feed & cut when you're done.";
+  $("feed").disabled = state.printing;
+}
+
+async function setAutoFeed(on) {
+  const printer = currentPrinter();
+  const response = await fetch(`/api/printers/${encodeURIComponent(printer.id)}/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ auto_feed: on }),
+  }).catch(() => null);
+  if (!response || !response.ok) {
+    setStatus("Couldn't save the feed setting.", "error");
+  } else {
+    printer.auto_feed = (await response.json()).auto_feed;
+  }
+  updateFeedControls();
+  schedulePreview(0); // cut lines appear or disappear
+}
+
+async function feed() {
+  const printer = currentPrinter();
+  if (!printer) return;
+  state.printing = true;
+  updatePrintButton();
+  setStatus(`Feeding ${printer.name}...`);
+  try {
+    const response = await fetch(`/api/printers/${encodeURIComponent(printer.id)}/feed`, {
+      method: "POST",
+    });
+    const body = await response.json().catch(() => ({}));
+    const [message, kind] = response.ok
+      ? ["Fed out - cut the strip now", "ok"]
+      : describeResult(response.status, body, printer.name);
+    setStatus(message, kind);
+  } catch (err) {
+    setStatus("Can't reach labelpi - is the Pi on?", "error");
+  } finally {
+    state.printing = false;
+    updatePrintButton();
+    refreshBusy();
+  }
+}
+
 function fillLabels() {
   const printer = currentPrinter();
   const select = $("label");
@@ -135,6 +192,7 @@ function fillLabels() {
   const labels = printer ? printer.labels : [];
   select.replaceChildren(...labels.map((l) => new Option(l.name, l.id)));
   if (labels.some((l) => l.id === previous)) select.value = previous;
+  updateFeedControls();
 }
 
 function setMode(mode) {
@@ -438,6 +496,7 @@ function showPreviewHint(message, isError = false) {
 
 function updatePrintButton() {
   $("print").disabled = !state.previewOk || state.printing;
+  $("feed").disabled = state.printing;
 }
 
 // ---------------------------------------------------------------------------
@@ -470,6 +529,9 @@ function describeResult(status, body, name) {
   const detail = body.detail || "";
   switch (status) {
     case 200:
+      if (body.fed === false) {
+        return [`Printed (${(body.ms / 1000).toFixed(1)} s) - Feed & cut when you're done`, "ok"];
+      }
       return [`Printed (${(body.ms / 1000).toFixed(1)} s)`, "ok"];
     case 409:
       return [`${name} is busy - try again in a moment`, "warn"];

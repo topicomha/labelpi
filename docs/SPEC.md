@@ -101,6 +101,22 @@ name (`"Freezer bag"` → `freezer-bag`, `freezer-bag-2` if taken).
   "align": "center", "font_size": null, "length_mm": null }
 ```
 
+### Chain printing and feed (tape printers)
+```
+GET  /api/printers                 -> [{ ..., "can_chain": true, "auto_feed": true }]
+PUT  /api/printers/<id>/settings   { "auto_feed": false }  -> printer (saved in settings.json)
+POST /api/printers/<id>/feed       -> { "status": "fed", "printer": "brother", "ms": 2400 }
+```
+The Brother's cutter is ~24 mm past its print head, so after each label it
+normally feeds the tape out so the label can be cut, which leaves ~24 mm of
+blank tape before the next one. With `auto_feed: false` labels print back to
+back instead (~2–3 mm apart), each with a dashed cut line at both ends (also
+in the preview), and `POST .../feed` pushes the finished strip out to the
+cutter (a one-line blank job). Every print endpoint also takes `"auto_feed"`
+(JSON) or an `auto_feed` form field to override the saved setting for one
+label; print responses say `"fed": true/false`. Printers that can't chain
+(the D30's die-cut labels) ignore it; setting it or feeding them is a `400`.
+
 ### `POST /api/print/ruler`
 ```json
 { "printer": "d30", "label": "12x50", "length_mm": null }
@@ -165,6 +181,8 @@ One page, responsive from ~360 px phone width up to desktop.
     "Edit this template" / "+ New template" open an editor (name, text,
     syntax help, Save / Cancel / Delete) whose text previews live.
     Picking a template selects and previews it; Print prints it.
+- Tape printers: a "Feed out after each label" checkbox (saved on the Pi)
+  and, when it's off, a **Feed & cut** button next to Print.
 - Live preview image, refreshed (debounced ~400 ms) from `?preview=1`.
 - **Print** button, disabled while a request is in flight.
 - Plain-English status line: "Printed", "Brother is busy — try again in a

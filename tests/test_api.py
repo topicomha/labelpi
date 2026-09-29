@@ -336,7 +336,7 @@ def test_upload_too_large(write_config, tmp_path):
     ],
 )
 def test_printer_failures(client, registry, monkeypatch, exception, status, error):
-    def broken_print(image, label):
+    def broken_print(image, label, chain=False):
         raise exception
 
     monkeypatch.setattr(registry.get("die"), "print", broken_print)
@@ -371,3 +371,79 @@ def test_ruler_preview_and_print(client, registry):
         400,
         "bad_request",
     )
+
+
+# --- chain printing (tape) and feed ---------------------------------------------------
+def tape_text(client, preview=False, **extra):
+    url = "/api/print/text" + ("?preview=1" if preview else "")
+    return client.post(url, json={"printer": "tape", "label": "tze-12", "text": "Hi", **extra})
+
+
+def test_printers_say_who_can_chain(client):
+    tape, die = client.get("/api/printers").get_json()
+    assert tape["can_chain"] is True and tape["auto_feed"] is True
+    assert die["can_chain"] is False and "auto_feed" not in die
+
+
+def test_auto_feed_setting_chains_labels(client, registry):
+    response = client.put("/api/printers/tape/settings", json={"auto_feed": False})
+    assert response.status_code == 200 and response.get_json()["auto_feed"] is False
+    assert client.get("/api/printers").get_json()[0]["auto_feed"] is False
+
+    printed = tape_text(client)
+    assert printed.get_json()["fed"] is False
+    assert tape_text(client, auto_feed=True).get_json()["fed"] is True  # per-request override
+    assert registry.get("tape").chained == [True, False]
+
+
+def test_chained_preview_shows_cut_lines(client):
+    plain = Image.open(io.BytesIO(tape_text(client, preview=True).data))
+    chained = Image.open(io.BytesIO(tape_text(client, preview=True, auto_feed=False).data))
+    assert plain.getpixel((0, 0)) != 0 and chained.getpixel((0, 0)) == 0
+
+
+def test_die_cut_labels_never_chain(client, registry):
+    response = client.post(
+        "/api/print/text",
+        json={"printer": "die", "label": "12x50", "text": "x", "auto_feed": False},
+    )
+    assert response.get_json()["fed"] is True
+    assert registry.get("die").chained == [False]
+
+
+@pytest.mark.parametrize(
+    "printer, body, status",
+    [
+        ("tape", {"auto_feed": "no"}, 400),
+        ("tape", {"colour": "red"}, 400),
+        ("die", {"auto_feed": False}, 400),
+        ("nope", {"auto_feed": False}, 404),
+    ],
+)
+def test_printer_settings_errors(client, printer, body, status):
+    assert client.put(f"/api/printers/{printer}/settings", json=body).status_code == status
+
+
+def test_bad_auto_feed_on_a_print_is_400(client):
+    assert_error(tape_text(client, auto_feed="yes"), 400, "bad_request")
+
+
+def test_feed(client, registry):
+    response = client.post("/api/printers/tape/feed")
+    assert response.status_code == 200 and response.get_json()["status"] == "fed"
+    assert registry.get("tape").feeds == 1
+    assert_error(client.post("/api/printers/die/feed"), 400, "bad_request")
+    assert_error(client.post("/api/printers/nope/feed"), 404, "not_found")
+    with registry.claim("tape"):
+        assert_error(client.post("/api/printers/tape/feed"), 409, "busy")
+
+
+def test_image_upload_can_chain(client, registry):
+    form = {
+        "printer": "tape",
+        "label": "tze-12",
+        "auto_feed": "false",
+        "file": (io.BytesIO(png_bytes()), "a.png"),
+    }
+    response = client.post("/api/print/image", data=form, content_type="multipart/form-data")
+    assert response.get_json()["fed"] is False
