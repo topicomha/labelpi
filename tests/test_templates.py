@@ -5,7 +5,6 @@ from datetime import datetime
 import pytest
 
 from labelpi.templates import (
-    STARTER_TEMPLATES,
     TemplateError,
     fill_template,
     shift_date,
@@ -110,17 +109,3 @@ def test_template_error_is_a_render_error():
     from labelpi.render import RenderError
 
     assert issubclass(TemplateError, RenderError)
-
-
-@pytest.mark.parametrize("template", STARTER_TEMPLATES, ids=lambda t: t.id)
-def test_starter_templates_are_valid(template):
-    validate_template(template.text)
-    filled = fill_template(template.text, FROZEN, {name: "Soup" for name in template.fields})
-    assert "{" not in filled
-
-
-def test_starter_template_fields():
-    by_id = {t.id: t for t in STARTER_TEMPLATES}
-    assert by_id["today"].fields == []
-    assert by_id["freezer"].fields == ["Item"]
-    assert fill(by_id["freezer"].text, Item="Soup") == "Soup\nFrozen 28 Sep 2026\nUse by Dec 2026"

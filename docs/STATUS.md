@@ -16,12 +16,14 @@ _Last updated: 2026-09-28._
 | 3 | Web UI | done |
 | 4 | Brother PT-P300BT backend (own encoder) | done — **real prints verified** |
 | 8 | Templates: fill-in fields, date maths, editor on the page | done |
+| 10 | Template layouts: background, shapes, icons, pictures | done on branch `templates-layout` — **not yet printed on real hardware** |
 | 5 | Phomemo D30 backend (BLE) | merged — **printed physical label not yet checked** (see below) |
 | 9 | Label sizes managed from the page | next |
 | 7 | Printer setup from the page: discovery, pairing, calibration | after 9 |
 | 6 | Deploy to the Pi Zero W: systemd, auto-deploy, Pi setup verified | last |
 
 Agreed build order: 8 → 9 → 5 → 7 → 6. Milestone 5 was pulled forward at the
+owner's request; 10 (layouts) was added and done before 9, also at the
 owner's request. Every milestone is its own branch + PR (see CLAUDE.md,
 "Working agreements").
 
@@ -50,12 +52,25 @@ Zero W.
    (`offset_mm` shifts the print along the label; + = later) and correct
    `config/printers.example.toml` (12 × 40 is unconfirmed — may be 12 × 50).
    Use `spike/spike_phomemo.py --calibrate` to print a mm ruler if needed.
-2. Three-line templates (e.g. Freezer) are small on 12 mm Brother tape (all
-   lines share ~9 mm). Owner may want one-line, tape-friendly variants.
+2. **Print the new layout starters on both printers** and check: thin lines
+   (0.3 mm = 2 px on the Brother) visible? small second-line text readable?
+   icons crisp? frames not cut off at the label edge (D30 position is still
+   uncalibrated, see 1)? Adjust `labelpi/starters.py` to taste.
 3. Brother 9 mm / 6 mm bands (48 / 32 px) are unverified guesses.
 4. Along the tape the Brother prints 0.149 mm per line (~170 dpi) while
    config says 180 dpi, so tape labels come out ~5 % longer than
    `length_mm` asks for. Minor; fix if it matters.
+
+## Template layouts (Milestone 10) in short
+
+A template is plain `text` (old kind; `printers.toml` and scripts) or a
+`layout`: background (colour, frame, picture) + elements (text, rect,
+ellipse, line, icon, image) positioned in % of the printable area. Icons are
+Font Awesome Free 6 / Tabler / Material Design Icons TTFs in
+`labelpi/vendor/`, searchable via `GET /api/icons`; uploaded pictures live in
+`config/assets/` via `/api/assets`. The page edits layouts as a list of
+element cards (no drag-and-drop) with live preview and a JSON view.
+Details: SPEC §12.
 
 ## Next: Milestone 9 — label sizes from the page
 
@@ -106,7 +121,7 @@ git config user.email "10187806+topicomha@users.noreply.github.com"
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 cp ~/labelpi-test/config/printers.toml config/   # or copy the example and fill in MACs
-.venv/bin/python -m pytest                       # 216 tests, no hardware
+.venv/bin/python -m pytest                       # ~300 tests, no hardware
 ```
 
 To push from the Pi you need GitHub credentials there, e.g. `gh auth login`
@@ -129,6 +144,10 @@ To push from the Pi you need GitHub credentials there, e.g. `gh auth login`
   commits use the owner's GitHub noreply address.
 - Template buttons select + preview; printing is always the Print button (no
   accidental one-tap prints on a phone).
+- **Layouts, not a designer.** Templates got backgrounds, shapes, icons and
+  pictures (Milestone 10), edited as an element list with typed % positions
+  and live preview — no drag-and-drop. Icons: Font Awesome Free **6** (FA 7
+  has no TTFs, and its OFL forbids renaming modified fonts), Tabler, MDI.
 
 ## Gotchas learned the hard way
 

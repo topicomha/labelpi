@@ -6,7 +6,8 @@ import threading
 import pytest
 
 from labelpi.settings import MAX_TEMPLATES, SettingsStore
-from labelpi.templates import STARTER_TEMPLATES, Template, TemplateError
+from labelpi.starters import STARTER_TEMPLATES
+from labelpi.templates import Template, TemplateError
 
 SEED = [Template("today", "Today's date", "{date:%d %b}"), Template("box", "Box", "{field:What}")]
 
