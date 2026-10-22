@@ -49,8 +49,10 @@ machine, set their addresses in `config/printers.toml` and drop `LABELPI_MOCK=1`
 
 ## Deploy
 
-Push to `main` on GitHub; the Pi checks every minute and redeploys itself
-(Milestone 6 — not built yet).
+One-time setup on a Raspberry Pi Zero W: clone the repo and run
+`deploy/install.sh` (see [docs/PI_SETUP.md](docs/PI_SETUP.md)). After that,
+merge to `main` on GitHub and the Pi picks it up within a minute: it pulls,
+smoke-tests, restarts, and rolls back if the new version doesn't start.
 
 ## Dependencies
 

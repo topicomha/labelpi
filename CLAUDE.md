@@ -73,8 +73,10 @@ config/
   printers.toml     # real config (MACs etc.) — gitignored
   printers.example.toml
 deploy/
-  deploy.sh         # cron-driven pull-and-restart script
-  labelpi.service   # systemd unit
+  install.sh        # one-time setup on the Pi (packages, venv, units, sudoers)
+  deploy.sh         # auto-deploy: pull main, smoke test, restart / roll back
+  labelpi.service   # systemd unit for the web service
+  labelpi-deploy.service / .timer  # runs deploy.sh every minute
   labelpi.sudoers   # allows the deploy user to restart the service only
 tests/
 tools/

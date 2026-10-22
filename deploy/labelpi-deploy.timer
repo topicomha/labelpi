@@ -1,0 +1,12 @@
+# Check GitHub for a new main every minute. (A systemd timer rather than
+# cron: same job, logs to the journal, never runs twice at once.)
+[Unit]
+Description=Check GitHub for a new labelpi main every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+RandomizedDelaySec=10s
+
+[Install]
+WantedBy=timers.target
