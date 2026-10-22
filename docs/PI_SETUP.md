@@ -30,7 +30,8 @@ The repo is public, so cloning needs no GitHub login. `install.sh` asks for
 your password (sudo) and then, in order:
 
 1. checks Python is 3.11 or newer;
-2. installs the system packages (`git python3-venv python3-pil bluez`);
+2. installs the system packages (`git python3-venv python3-pil bluez rfkill`)
+   and switches Bluetooth on (a fresh install can start with it blocked);
 3. adds your user to the `bluetooth` group;
 4. creates `.venv` and installs `requirements.txt`. Pillow, bleak and
    dbus-fast come prebuilt from piwheels; **this is the slow step on a Zero**,

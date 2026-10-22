@@ -33,7 +33,14 @@ step "Installing system packages"
 # python3-pil brings Pillow's native libraries; pip then installs Pillow
 # itself from piwheels (prebuilt for the Pi, no compiling).
 sudo apt-get update -qq
-sudo apt-get install -y -qq git python3-venv python3-pil bluez
+sudo apt-get install -y -qq git python3-venv python3-pil bluez rfkill
+
+step "Switching Bluetooth on"
+# A fresh Raspberry Pi OS can start with Bluetooth soft-blocked ("PowerState:
+# off-blocked" in bluetoothctl): the adapter stays off and nothing can print.
+# systemd remembers the unblock across reboots.
+sudo rfkill unblock bluetooth
+sudo bluetoothctl power on >/dev/null || echo "!! Couldn't power Bluetooth on - check: bluetoothctl show"
 
 step "Letting $USER_NAME use Bluetooth"
 sudo usermod -aG bluetooth "$USER_NAME"
